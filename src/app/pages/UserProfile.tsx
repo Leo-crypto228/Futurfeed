@@ -549,6 +549,7 @@ function PostsSection({ username, profileUser }: { username: string; profileUser
               sharesCount={post.sharesCount}
               viewsCount={post.viewsCount}
               hideStreak
+              onPostDeleted={() => setPosts((prev) => prev.filter((p) => p.id !== post.id))}
             />
           </motion.div>
         ))}

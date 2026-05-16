@@ -1016,16 +1016,23 @@ app.post("/make-server-218684af/post-actions/not-relevant", async (c) => {
 });
 
 app.delete("/make-server-218684af/posts/:id", async (c) => {
+  const id = c.req.param("id");
   try {
-    const id = c.req.param("id");
     const raw = await kv.get(`ff:post:${id}`);
-    if (!raw) return c.json({ error: "Post introuvable." }, 404);
+    if (!raw) return c.json({ success: true }); // already deleted, idempotent
     const post = JSON.parse(raw);
     await kv.del(`ff:post:${id}`);
-    const allIds: string[] = JSON.parse((await kv.get("ff:posts:all")) || "[]");
-    await kv.set("ff:posts:all", JSON.stringify(allIds.filter((i) => i !== id)));
-    const userIds: string[] = JSON.parse((await kv.get(`ff:posts:user:${post.username}`)) || "[]");
-    await kv.set(`ff:posts:user:${post.username}`, JSON.stringify(userIds.filter((i) => i !== id)));
+    // Index cleanup — best-effort, don't fail the response if this errors
+    try {
+      const [allIds, userIds] = await Promise.all([
+        kv.get("ff:posts:all").then((r) => JSON.parse(r || "[]") as string[]),
+        kv.get(`ff:posts:user:${post.username}`).then((r) => JSON.parse(r || "[]") as string[]),
+      ]);
+      await Promise.all([
+        kv.set("ff:posts:all", JSON.stringify(allIds.filter((i) => i !== id))),
+        kv.set(`ff:posts:user:${post.username}`, JSON.stringify(userIds.filter((i) => i !== id))),
+      ]);
+    } catch { /* index cleanup failed — post is deleted, that's what matters */ }
     return c.json({ success: true });
   } catch (err) {
     return c.json({ error: `Échec suppression post: ${err}` }, 500);
@@ -2957,12 +2964,22 @@ app.get("/make-server-218684af/profiles/:username", async (c) => {
     const raw = await kv.get(`ff:profile:${username}`);
     if (!raw) return c.json({ error: "Profil introuvable.", found: false }, 404);
     const profile = JSON.parse(raw);
-    const postIds: string[] = JSON.parse((await kv.get(`ff:posts:user:${username}`)) || "[]");
-    const followerIds: string[] = JSON.parse((await kv.get(`ff:followers:${username}`)) || "[]");
-    const followingIds: string[] = JSON.parse((await kv.get(`ff:following:${username}`)) || "[]");
+    const [postIds, followerIds, followingIds, onboardingFlag, firstPostFlag] = await Promise.all([
+      kv.get(`ff:posts:user:${username}`).then((r) => JSON.parse(r || "[]") as string[]),
+      kv.get(`ff:followers:${username}`).then((r) => JSON.parse(r || "[]") as string[]),
+      kv.get(`ff:following:${username}`).then((r) => JSON.parse(r || "[]") as string[]),
+      kv.get(`ff:done:onboarding:${username}`),
+      kv.get(`ff:done:firstpost:${username}`),
+    ]);
     profile.postsCount = postIds.length;
     profile.followersCount = followerIds.length;
     profile.followingCount = followingIds.length;
+    // Permanent completion flags override whatever is in the profile object.
+    // Also backfill the flag if the profile already has the field set (migration for existing users).
+    if (onboardingFlag)  { profile.onboardingDone   = true; }
+    else if (profile.onboardingDone) { kv.set(`ff:done:onboarding:${username}`, "1").catch(() => {}); }
+    if (firstPostFlag)   { profile.firstPostCreated  = true; }
+    else if (profile.firstPostCreated) { kv.set(`ff:done:firstpost:${username}`, "1").catch(() => {}); }
     if (profile.createdAt) profile.joinedAt = relativeTime(profile.createdAt);
     // Rétrocompat : écrire le mapping supabaseId → username si manquant
     if (profile.supabaseId) {
@@ -3032,11 +3049,14 @@ app.put("/make-server-218684af/profiles/:username", async (c) => {
       objectifsAccomplis: body.objectifsAccomplis ?? existing.objectifsAccomplis ?? 0,
       daysOnFF:           body.daysOnFF          ?? existing.daysOnFF          ?? 1,
       onboardingDone:     body.onboardingDone     ?? existing.onboardingDone     ?? false,
-      firstPostCreated:   body.firstPostCreated   ?? existing.firstPostCreated   ?? false,
+      firstPostCreated:   body.firstPostCreated   ?? existing.firstPostCreated   ?? existing.onboardingDone ?? false,
       createdAt:          existing.createdAt     ?? now,
       updatedAt:          now,
     };
     await kv.set(`ff:profile:${username}`, JSON.stringify(profile));
+    // Permanent completion flags — once set, never cleared
+    if (profile.onboardingDone) await kv.set(`ff:done:onboarding:${username}`, "1").catch(() => {});
+    if (profile.firstPostCreated) await kv.set(`ff:done:firstpost:${username}`, "1").catch(() => {});
     console.log(`PUT profile/${username}`);
 
     // ── Propagation live dans les posts existants (avatar, objective, streak) ──
@@ -3077,12 +3097,20 @@ app.get("/make-server-218684af/profiles/by-uid/:supabaseId", async (c) => {
     const raw = await kv.get(`ff:profile:${storedUsername}`);
     if (!raw) return c.json({ found: false, kvUsername: storedUsername }, 404);
     const profile = JSON.parse(raw);
-    const followerIds: string[] = JSON.parse((await kv.get(`ff:followers:${storedUsername}`)) || "[]");
-    const followingIds: string[] = JSON.parse((await kv.get(`ff:following:${storedUsername}`)) || "[]");
-    const postIds: string[] = JSON.parse((await kv.get(`ff:posts:user:${storedUsername}`)) || "[]");
+    const [followerIds, followingIds, postIds, onboardingFlag, firstPostFlag] = await Promise.all([
+      kv.get(`ff:followers:${storedUsername}`).then((r) => JSON.parse(r || "[]") as string[]),
+      kv.get(`ff:following:${storedUsername}`).then((r) => JSON.parse(r || "[]") as string[]),
+      kv.get(`ff:posts:user:${storedUsername}`).then((r) => JSON.parse(r || "[]") as string[]),
+      kv.get(`ff:done:onboarding:${storedUsername}`),
+      kv.get(`ff:done:firstpost:${storedUsername}`),
+    ]);
     profile.followersCount = followerIds.length;
     profile.followingCount = followingIds.length;
     profile.postsCount = postIds.length;
+    if (onboardingFlag)  { profile.onboardingDone   = true; }
+    else if (profile.onboardingDone) { kv.set(`ff:done:onboarding:${storedUsername}`, "1").catch(() => {}); }
+    if (firstPostFlag)   { profile.firstPostCreated  = true; }
+    else if (profile.firstPostCreated) { kv.set(`ff:done:firstpost:${storedUsername}`, "1").catch(() => {}); }
     console.log(`GET profiles/by-uid/${supabaseId} -> username=${storedUsername}`);
     return c.json({ found: true, profile, kvUsername: storedUsername });
   } catch (err) {
