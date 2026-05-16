@@ -2974,6 +2974,11 @@ app.get("/make-server-218684af/profiles/:username", async (c) => {
     profile.postsCount = postIds.length;
     profile.followersCount = followerIds.length;
     profile.followingCount = followingIds.length;
+    // Un compte avec des posts a FORCÉMENT terminé l'onboarding — corriger l'état si besoin.
+    if (postIds.length > 0) {
+      profile.onboardingDone   = true;
+      profile.firstPostCreated = true;
+    }
     // Permanent completion flags override whatever is in the profile object.
     // Also backfill the flag if the profile already has the field set (migration for existing users).
     if (onboardingFlag)  { profile.onboardingDone   = true; }
@@ -3107,6 +3112,10 @@ app.get("/make-server-218684af/profiles/by-uid/:supabaseId", async (c) => {
     profile.followersCount = followerIds.length;
     profile.followingCount = followingIds.length;
     profile.postsCount = postIds.length;
+    if (postIds.length > 0) {
+      profile.onboardingDone   = true;
+      profile.firstPostCreated = true;
+    }
     if (onboardingFlag)  { profile.onboardingDone   = true; }
     else if (profile.onboardingDone) { kv.set(`ff:done:onboarding:${storedUsername}`, "1").catch(() => {}); }
     if (firstPostFlag)   { profile.firstPostCreated  = true; }

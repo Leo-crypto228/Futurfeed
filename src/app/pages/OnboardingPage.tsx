@@ -234,6 +234,11 @@ export function OnboardingPage() {
   const { user, updateLocalUser } = useAuth();
   const navigate = useNavigate();
 
+  // Si le compte a déjà terminé l'onboarding (détecté après le refresh KV), sortir immédiatement.
+  useEffect(() => {
+    if (user?.onboardingDone) navigate("/", { replace: true });
+  }, [user?.onboardingDone, navigate]);
+
   const [stepIdx,   setStepIdx]   = useState(0);
   const [direction, setDirection] = useState(1); // +1 forward, -1 back
   const [saving,    setSaving]    = useState(false);
