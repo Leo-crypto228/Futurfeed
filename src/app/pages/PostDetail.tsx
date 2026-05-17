@@ -3,8 +3,8 @@ import { useLocation, useNavigate, useParams } from "react-router";
 import { MY_USER_ID as _authUserId, MY_USER_NAME as _authUserName, MY_USER_AVATAR as _authUserAvatar } from "../api/authStore";
 import { motion, AnimatePresence } from "motion/react";
 import {
-  ArrowLeft, MessageCircle, Share2, Bookmark,
-  Send, Hash, Bold, X, Check, MoreHorizontal, Reply,
+  ArrowLeft, MessageCircle, Share2,
+  Send, X, Check, MoreHorizontal, Reply,
   AlertTriangle, TrendingDown, ThumbsDown, Plus, Loader2, WifiOff, ChevronDown, ChevronUp, Mic,
 } from "lucide-react";
 import { VoicePlayer } from "../components/VoicePlayer";
@@ -118,14 +118,14 @@ function VoiceTimer({ startTime }: { startTime: number }) {
 
 /* ── ApiCommentRow — commentaire backend avec réactions persistées + réponses inline ── */
 function ApiCommentRow({
-  comment, isTopConseil, onReplyClick, pendingReply, currentUserId, onDelete, onUpdate,
+  comment, isTopConseil, pendingReply, currentUserId, onDelete, onUpdate, onSubmitReply,
 }: {
   comment: ApiComment; isTopConseil: boolean;
-  onReplyClick: (commentId: string, authorName: string) => void;
   pendingReply?: ApiReply | null;
   currentUserId: string;
   onDelete: (commentId: string) => void;
   onUpdate: (commentId: string, newContent: string) => void;
+  onSubmitReply: (commentId: string, content: string) => Promise<void>;
 }) {
   const navigate = useNavigate();
   const [activeReaction, setActiveReaction] = useState<ReactionType | null>((comment.myReaction as ReactionType) ?? null);
@@ -146,6 +146,9 @@ function ApiCommentRow({
   const [editMode, setEditMode] = useState(false);
   const [editContent, setEditContent] = useState(comment.content);
   const [savingEdit, setSavingEdit] = useState(false);
+  const [showReplyInput, setShowReplyInput] = useState(false);
+  const [localReplyInput, setLocalReplyInput] = useState("");
+  const [submittingLocalReply, setSubmittingLocalReply] = useState(false);
 
   const isOwn = !!currentUserId && comment.userId === currentUserId;
 
@@ -198,6 +201,20 @@ function ApiCommentRow({
       setSavingEdit(false);
     }
   }, [comment.id, editContent, savingEdit, onUpdate]);
+
+  const handleLocalReply = useCallback(async () => {
+    if (!localReplyInput.trim() || submittingLocalReply) return;
+    setSubmittingLocalReply(true);
+    try {
+      await onSubmitReply(comment.id, localReplyInput.trim());
+      setLocalReplyInput("");
+      setShowReplyInput(false);
+    } catch (err) {
+      console.error("Erreur envoi réponse:", err);
+    } finally {
+      setSubmittingLocalReply(false);
+    }
+  }, [comment.id, localReplyInput, submittingLocalReply, onSubmitReply]);
 
   const loadReplies = async () => {
     if (isShowingReplies) { setShowReplies(false); return; }
@@ -357,7 +374,7 @@ function ApiCommentRow({
             );
           })}
           {/* Répondre */}
-          <motion.button whileTap={{ scale: 0.88 }} onClick={() => onReplyClick(comment.id, comment.author)}
+          <motion.button whileTap={{ scale: 0.88 }} onClick={() => { setShowReplyInput((v) => !v); setLocalReplyInput(""); }}
             style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 999, background: "transparent", border: "none", cursor: "pointer" }}
           >
             <Reply style={{ width: 13, height: 13, color: "rgba(255,255,255,0.38)", strokeWidth: 2 }} />
@@ -377,16 +394,51 @@ function ApiCommentRow({
             </motion.button>
           )}
         </div>
-        {/* Réponses inline */}
+        {/* Inline reply input — apparaît sous ce commentaire */}
+        <AnimatePresence>
+          {showReplyInput && (
+            <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}
+              style={{ overflow: "hidden", marginTop: 10 }}
+            >
+              <div style={{ display: "flex", alignItems: "flex-end", gap: 8, padding: "8px 12px", borderRadius: 999, background: "rgba(255,255,255,0.06)", border: "0.5px solid rgba(180,180,200,0.20)" }}>
+                <textarea
+                  autoFocus
+                  value={localReplyInput}
+                  onChange={(e) => setLocalReplyInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleLocalReply(); } if (e.key === "Escape") setShowReplyInput(false); }}
+                  onInput={(e) => { const t = e.currentTarget; t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight, 90) + "px"; }}
+                  placeholder={`Répondre à ${comment.author}…`}
+                  rows={1}
+                  style={{ flex: 1, background: "transparent", border: "none", outline: "none", fontSize: 13, color: "#ffffff", caretColor: "#fff", resize: "none", lineHeight: 1.5, maxHeight: 90, minHeight: 20, fontFamily: "inherit", paddingTop: 2, paddingBottom: 2 }}
+                  className="placeholder:text-[rgba(180,180,200,0.35)]"
+                />
+                {submittingLocalReply ? (
+                  <motion.div animate={{ rotate: 360 }} transition={{ duration: 0.8, repeat: Infinity, ease: "linear" }}><Loader2 style={{ width: 14, height: 14, color: "rgba(255,255,255,0.50)" }} /></motion.div>
+                ) : (
+                  <motion.button whileTap={{ scale: 0.85 }} onClick={handleLocalReply} disabled={!localReplyInput.trim()}
+                    style={{ background: "none", border: "none", cursor: localReplyInput.trim() ? "pointer" : "default", padding: 0, display: "flex", flexShrink: 0, paddingBottom: 4 }}
+                  >
+                    <Send style={{ width: 14, height: 14, color: localReplyInput.trim() ? "rgba(255,255,255,0.80)" : "rgba(255,255,255,0.20)", transition: "color 0.2s" }} />
+                  </motion.button>
+                )}
+                <motion.button whileTap={{ scale: 0.85 }} onClick={() => setShowReplyInput(false)} style={{ background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex", flexShrink: 0, paddingBottom: 4 }}>
+                  <X style={{ width: 13, height: 13, color: "rgba(255,255,255,0.30)" }} />
+                </motion.button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Réponses chargées */}
         {isShowingReplies && displayReplies.length > 0 && (
           <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }}
-            style={{ overflow: "hidden", marginTop: 14, paddingLeft: 14, borderLeft: "2px solid rgba(99,102,241,0.20)" }}
+            style={{ overflow: "hidden", marginTop: 14, paddingLeft: 14, borderLeft: "2px solid rgba(180,180,200,0.15)" }}
           >
             {displayReplies.map((reply) => (
               <motion.div key={reply.id} initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} style={{ display: "flex", gap: 10, marginBottom: 14 }}>
-                <div style={{ width: 28, height: 28, borderRadius: "50%", overflow: "hidden", flexShrink: 0, border: "1px solid rgba(99,102,241,0.18)" }}>
+                <div style={{ width: 28, height: 28, borderRadius: "50%", overflow: "hidden", flexShrink: 0, border: "1px solid rgba(180,180,200,0.15)" }}>
                   {reply.avatar ? <img src={reply.avatar} alt={reply.author} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                    : <div style={{ width: "100%", height: "100%", background: "linear-gradient(135deg,#6366f1,#a78bfa)", display: "flex", alignItems: "center", justifyContent: "center" }}><span style={{ fontSize: 10, fontWeight: 700, color: "#fff" }}>{reply.author.slice(0, 2).toUpperCase()}</span></div>}
+                    : <div style={{ width: "100%", height: "100%", background: "rgba(255,255,255,0.12)", display: "flex", alignItems: "center", justifyContent: "center" }}><span style={{ fontSize: 10, fontWeight: 700, color: "#fff" }}>{reply.author.slice(0, 2).toUpperCase()}</span></div>}
                 </div>
                 <div style={{ flex: 1 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 4 }}>
@@ -1136,13 +1188,10 @@ export function PostDetail() {
 
   // ── API comments ─────────────────────────────────────────────────────────
   const [apiComments, setApiComments] = useState<ApiComment[]>([]);
+  const [commentsTotal, setCommentsTotal] = useState<number>(post?.commentsCount ?? 0);
   const [loadingComments, setLoadingComments] = useState(false);
   const [commentsError, setCommentsError] = useState<string | null>(null);
   const [submittingComment, setSubmittingComment] = useState(false);
-  const [activeReplyTarget, setActiveReplyTarget] = useState<{ commentId: string; authorName: string } | null>(null);
-  const [replyInput, setReplyInput] = useState("");
-  const [submittingReply, setSubmittingReply] = useState(false);
-  // No extra state needed — optimistic replies are embedded in apiComments (optimisticReply field)
 
   // Fetch des commentaires API au chargement
   useEffect(() => {
@@ -1150,8 +1199,9 @@ export function PostDetail() {
     setLoadingComments(true);
     setCommentsError(null);
     getPostComments(postId, { userId: myUserId })
-      .then(({ comments: c }) => {
+      .then(({ comments: c, total }) => {
         setApiComments(c); // affiche immédiatement
+        setCommentsTotal(total ?? c.length);
         // charge les réactions Supabase en arrière-plan sans bloquer
         if (c.length > 0) {
           loadReactionCounts(c.map((cm) => cm.id), myUserId)
@@ -1429,7 +1479,7 @@ export function PostDetail() {
     return sortedApiComments.filter((c) => c.commentType === "Conseil").slice(0, 10).map((c) => c.id);
   }, [sortedApiComments]);
 
-  const totalComments = apiComments.length;
+  const totalComments = commentsTotal;
 
   const handleSendComment = useCallback(async () => {
     const raw = commentInput.trim();
@@ -1453,10 +1503,11 @@ export function PostDetail() {
       myReaction: null,
     };
     setApiComments((prev) => [optimistic, ...prev]);
+    setCommentsTotal((n) => n + 1);
     const capturedEloType = eloType;
     const capturedRaw = boldMode ? `**${raw}**` : raw;
     setCommentInput(""); setBoldMode(false);
-    setEloType(null); setReplyingTo(null); setActiveReplyTarget(null);
+    setEloType(null); setReplyingTo(null);
     setTimeout(() => listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" }), 80);
 
     try {
@@ -1519,13 +1570,7 @@ export function PostDetail() {
     }
   };
 
-  const handleSendReply = async () => {
-    if (!activeReplyTarget || !replyInput.trim() || submittingReply) return;
-    setSubmittingReply(true);
-    const targetCommentId = activeReplyTarget.commentId;
-    const replyContent = replyInput.trim();
-
-    // Optimistic reply — embedded directly in the comment's optimisticReply field (no new state needed)
+  const handleSubmitReply = useCallback(async (targetCommentId: string, replyContent: string) => {
     const optimisticReply: ApiReply = {
       id: `temp-${Date.now()}`,
       commentId: targetCommentId,
@@ -1536,35 +1581,18 @@ export function PostDetail() {
       createdAt: new Date().toISOString(),
       timestamp: "À l'instant",
     };
-
     setApiComments((prev) => prev.map((c) =>
       c.id === targetCommentId
         ? { ...c, repliesCount: (c.repliesCount || 0) + 1, optimisticReply }
         : c
     ));
-    setReplyInput(""); setActiveReplyTarget(null);
-
-    try {
-      const { reply: serverReply } = await createReply(targetCommentId, {
-        userId: myUserId, author: myUserName, avatar: myUserAvatar, content: replyContent,
-      });
-      // Replace optimistic with real server reply
-      setApiComments((prev) => prev.map((c) =>
-        c.id === targetCommentId ? { ...c, optimisticReply: serverReply } : c
-      ));
-    } catch (err) {
-      console.error("Erreur envoi réponse:", err);
-      // Keep optimistic reply visible on error
-    } finally {
-      setSubmittingReply(false);
-    }
-  };
-
-  const handleApiReplyClick = (commentId: string, authorName: string) => {
-    setActiveReplyTarget({ commentId, authorName });
-    setReplyInput("");
-    setView("comments");
-  };
+    const { reply: serverReply } = await createReply(targetCommentId, {
+      userId: myUserId, author: myUserName, avatar: myUserAvatar, content: replyContent,
+    });
+    setApiComments((prev) => prev.map((c) =>
+      c.id === targetCommentId ? { ...c, optimisticReply: serverReply } : c
+    ));
+  }, [myUserId, myUserName, myUserAvatar]);
 
   const handleReply = (author: string) => {
     setReplyingTo(author);
@@ -1844,6 +1872,116 @@ export function PostDetail() {
             </div>
           </motion.div>
 
+          {/* ── Composer intégré — sous les boutons du post ── */}
+          {view === "comments" && (
+            <div style={{ padding: "10px 0 14px", position: "relative" }}>
+              {showEmojiPicker && <EmojiPicker onSelect={(e) => setCommentInput((v) => v + e)} onClose={() => setShowEmojiPicker(false)} />}
+              {hasCommentAutocomplete && (
+                <div className="fixed inset-0 z-40" onClick={() => setShowCommentAutocomplete(false)} />
+              )}
+              {/* Autocomplete dropdown */}
+              {hasCommentAutocomplete && (
+                <motion.div initial={{ opacity: 0, y: 8, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ duration: 0.16 }}
+                  style={{ position: "absolute", bottom: "calc(100% + 4px)", left: 0, right: 0, zIndex: 55, background: "rgba(16,16,30,0.97)", backdropFilter: "blur(28px)", WebkitBackdropFilter: "blur(28px)", border: "0.5px solid rgba(255,255,255,0.12)", borderRadius: 18, boxShadow: "0 -8px 32px rgba(0,0,0,0.50)", overflow: "hidden" }}
+                >
+                  {commentHashSuggestions.map((h, i) => (
+                    <motion.button key={h} whileTap={{ scale: 0.97 }} onClick={() => handleCommentSelectHash(h)}
+                      style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "11px 16px", background: "transparent", border: "none", borderBottom: i < commentHashSuggestions.length - 1 || commentUserSuggestions.length > 0 ? "0.5px solid rgba(255,255,255,0.06)" : "none", cursor: "pointer" }}
+                    >
+                      <span style={{ fontSize: 14, color: "#818cf8", fontWeight: 700 }}>#</span>
+                      <span style={{ fontSize: 14, color: "rgba(255,255,255,0.80)", fontWeight: 500 }}>{h}</span>
+                    </motion.button>
+                  ))}
+                  {commentUserSuggestions.map((u, i) => (
+                    <motion.button key={u.handle} whileTap={{ scale: 0.97 }} onClick={() => handleCommentSelectUser(u.handle)}
+                      style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "9px 16px", background: "transparent", border: "none", borderBottom: i < commentUserSuggestions.length - 1 ? "0.5px solid rgba(255,255,255,0.06)" : "none", cursor: "pointer" }}
+                    >
+                      <img src={u.avatar} alt={u.name} style={{ width: 26, height: 26, borderRadius: "50%", objectFit: "cover", border: "1px solid rgba(99,102,241,0.25)" }} />
+                      <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+                        <span style={{ fontSize: 14, color: "rgba(255,255,255,0.85)", fontWeight: 600 }}>{u.name}</span>
+                        <span style={{ fontSize: 12, color: "rgba(255,255,255,0.35)" }}>{u.handle}</span>
+                      </div>
+                    </motion.button>
+                  ))}
+                </motion.div>
+              )}
+              <AnimatePresence mode="wait">
+                {voiceState !== "idle" ? (
+                  <motion.div key="voice-rec" initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.97 }} transition={{ duration: 0.13 }}
+                    style={{ display: "flex", alignItems: "center", gap: 10, minHeight: 46, borderRadius: 999, padding: "8px 14px", background: "rgba(255,255,255,0.09)", border: "0.5px solid rgba(255,255,255,0.18)" }}
+                  >
+                    <motion.button type="button" whileTap={{ scale: 0.88 }} onPointerDown={(e) => { e.preventDefault(); cancelVoice(); }}
+                      style={{ background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex", flexShrink: 0 }}
+                    >
+                      <X style={{ width: 16, height: 16, color: "rgba(255,255,255,0.40)" }} />
+                    </motion.button>
+                    <div style={{ flex: 1 }}>
+                      {voiceState === "uploading" ? (
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <motion.div animate={{ rotate: 360 }} transition={{ duration: 0.8, repeat: Infinity, ease: "linear" }}><Loader2 style={{ width: 14, height: 14, color: "#818cf8" }} /></motion.div>
+                          <span style={{ fontSize: 13, color: "rgba(255,255,255,0.40)" }}>Envoi…</span>
+                        </div>
+                      ) : (
+                        <div style={{ display: "flex", alignItems: "center", gap: 3, height: 24 }}>
+                          {Array.from({ length: 20 }).map((_, i) => (
+                            <motion.div key={i} style={{ width: 3, borderRadius: 2, background: "rgba(30,30,40,0.70)" }}
+                              animate={{ height: [4, 4 + Math.random() * 18, 4] }} transition={{ duration: 0.7, repeat: Infinity, delay: i * 0.07, ease: "easeInOut" }}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    {voiceState === "recording" && (
+                      <>
+                        <VoiceTimer startTime={voiceStartRef.current} />
+                        <motion.button type="button" whileTap={{ scale: 0.88 }} onClick={handleMicSend}
+                          style={{ width: 30, height: 30, borderRadius: "50%", background: "#6366f1", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+                        >
+                          <Send style={{ width: 13, height: 13, color: "#fff" }} />
+                        </motion.button>
+                      </>
+                    )}
+                  </motion.div>
+                ) : (
+                  <motion.div key="compose" initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.97 }} transition={{ duration: 0.13 }}
+                    style={{ display: "flex", alignItems: "flex-end", gap: 8 }}
+                  >
+                    <div style={{ flex: 1, display: "flex", alignItems: "flex-end", gap: 10, minHeight: 46, borderRadius: 999, padding: "8px 14px", background: boldMode ? "rgba(99,102,241,0.12)" : "rgba(255,255,255,0.07)", border: boldMode ? "0.5px solid rgba(99,102,241,0.45)" : "0.5px solid rgba(120,120,140,0.25)", transition: "all 0.2s" }}>
+                      <HighlightInput
+                        inputRef={inputRef}
+                        value={commentInput}
+                        onChange={(v) => { setCommentInput(v); setShowCommentAutocomplete(true); }}
+                        onFocus={() => { setShowEmojiPicker(false); }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && !e.shiftKey && !hasCommentAutocomplete) { e.preventDefault(); handleSendComment(); }
+                        }}
+                        placeholder="Écrire un commentaire…"
+                        fontWeight={boldMode ? 700 : 400}
+                        placeholderClassName="placeholder:text-[rgba(144,144,168,0.35)]"
+                        multiline
+                        maxHeight={120}
+                        minHeight={22}
+                      />
+                      <motion.button whileTap={commentInput.trim() && !submittingComment ? { scale: 0.82 } : {}} onClick={handleSendComment} disabled={!commentInput.trim() || submittingComment}
+                        style={{ background: "none", border: "none", cursor: commentInput.trim() && !submittingComment ? "pointer" : "default", padding: 0, display: "flex", flexShrink: 0, alignSelf: "flex-end", paddingBottom: 6 }}
+                      >
+                        {submittingComment
+                          ? <motion.div animate={{ rotate: 360 }} transition={{ duration: 0.8, repeat: Infinity, ease: "linear" }}><Loader2 style={{ width: 17, height: 17, color: "#818cf8" }} /></motion.div>
+                          : <Send style={{ width: 17, height: 17, color: commentInput.trim() ? "#818cf8" : "rgba(255,255,255,0.16)", transition: "color 0.2s" }} />
+                        }
+                      </motion.button>
+                    </div>
+                    <motion.button type="button" whileTap={{ scale: 0.88 }} onClick={handleMicClick}
+                      style={{ height: 46, width: 46, borderRadius: 999, flexShrink: 0, background: "rgba(255,255,255,0.07)", border: "0.5px solid rgba(120,120,140,0.25)", display: "flex", alignItems: "center", justifyContent: "center", cursor: myUserId ? "pointer" : "not-allowed", alignSelf: "flex-end" }}
+                    >
+                      <Mic style={{ width: 18, height: 18, color: "rgba(255,255,255,0.65)" }} />
+                    </motion.button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          )}
+
           {/* ── Content area: Comments / Share / Stats ── */}
           <div ref={sectionsRef} style={{ padding: "0 2px" }}>
             
@@ -1877,57 +2015,6 @@ export function PostDetail() {
                     </div>
                   )}
 
-                  {/* Bannière réponse inline */}
-                  
-                    {activeReplyTarget && (
-                      <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }}
-                        style={{ overflow: "hidden", marginBottom: 14 }}
-                      >
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderRadius: 14, background: "rgba(99,102,241,0.08)", border: "0.5px solid rgba(99,102,241,0.25)" }}>
-                          <Reply style={{ width: 14, height: 14, color: "#818cf8", flexShrink: 0 }} />
-                          <span style={{ fontSize: 13, color: "#c7d2fe", fontWeight: 600, whiteSpace: "nowrap" }}>
-                            → <span style={{ color: "#a5b4fc" }}>{activeReplyTarget.authorName.toLowerCase().replace(/\s+/g, "_")}</span>
-                          </span>
-                          <div style={{ display: "flex", alignItems: "flex-end", gap: 6, flex: 1, background: "rgba(255,255,255,0.07)", borderRadius: 18, padding: "6px 12px", border: "0.5px solid rgba(99,102,241,0.28)" }}>
-                            <textarea autoFocus value={replyInput} onChange={(e) => setReplyInput(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSendReply(); }
-                                if (e.key === "Escape") setActiveReplyTarget(null);
-                              }}
-                              onInput={(e) => {
-                                const t = e.currentTarget;
-                                t.style.height = "auto";
-                                t.style.height = Math.min(t.scrollHeight, 100) + "px";
-                              }}
-                              placeholder="Votre réponse... (Maj+Entrée pour saut de ligne)"
-                              rows={1}
-                              style={{
-                                flex: 1, background: "transparent", border: "none", outline: "none",
-                                fontSize: 13, color: "#f0f0f5", caretColor: "#6366f1",
-                                resize: "none", lineHeight: 1.5, maxHeight: 100, minHeight: 20,
-                                whiteSpace: "pre-wrap", wordBreak: "break-word", overflowWrap: "anywhere",
-                                fontFamily: "inherit", paddingTop: 2, paddingBottom: 2,
-                              }}
-                              className="placeholder:text-[rgba(144,144,168,0.35)]"
-                            />
-                            {submittingReply ? (
-                              <motion.div animate={{ rotate: 360 }} transition={{ duration: 0.8, repeat: Infinity, ease: "linear" }}><Loader2 style={{ width: 14, height: 14, color: "#818cf8" }} /></motion.div>
-                            ) : (
-                              <motion.button whileTap={{ scale: 0.85 }} onClick={handleSendReply} disabled={!replyInput.trim()}
-                                style={{ background: "none", border: "none", cursor: replyInput.trim() ? "pointer" : "default", padding: 0, display: "flex" }}
-                              >
-                                <Send style={{ width: 14, height: 14, color: replyInput.trim() ? "#818cf8" : "rgba(255,255,255,0.20)", transition: "color 0.2s" }} />
-                              </motion.button>
-                            )}
-                          </div>
-                          <motion.button whileTap={{ scale: 0.85 }} onClick={() => setActiveReplyTarget(null)} style={{ background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex" }}>
-                            <X style={{ width: 14, height: 14, color: "rgba(255,255,255,0.35)" }} />
-                          </motion.button>
-                        </div>
-                      </motion.div>
-                    )}
-                  
-
                   {/* ── Commentaires API (live) — Conseil toujours en premier ── */}
                   {sortedApiComments.length > 0 && (
                     <div style={{ display: "flex", flexDirection: "column", gap: 20, marginBottom: 24 }}>
@@ -1937,11 +2024,11 @@ export function PostDetail() {
                             key={c.id}
                             comment={c}
                             isTopConseil={topApiConseilIds.includes(c.id)}
-                            onReplyClick={handleApiReplyClick}
                             pendingReply={c.optimisticReply ?? null}
                             currentUserId={myUserId}
                             onDelete={handleDeleteComment}
                             onUpdate={handleUpdateComment}
+                            onSubmitReply={handleSubmitReply}
                           />
                         ))}
                       
@@ -1976,217 +2063,6 @@ export function PostDetail() {
             
           </div>
         </div>
-      {/* ── Comment composer (inside scroll) ── */}
-        {(view === "comments") && (
-          <motion.div
-            initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: 0.2 }}
-            style={{ background: "#000000", borderTop: "0.5px solid rgba(99,102,241,0.18)", paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
-          >
-            <div style={{ maxWidth: 640, margin: "0 auto" }}>
-            {/* ── Comment type pills row (toujours visible en mode commentaires : layout stable, pas de croissance au focus) ── */}
-            <div style={{ display: "flex", gap: 8, padding: "10px 14px 0", overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-              {/* Reply indicator */}
-              {replyingTo && (
-                <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 999, background: "rgba(99,102,241,0.12)", border: "0.5px solid rgba(99,102,241,0.30)", flexShrink: 0 }}>
-                  <Reply style={{ width: 12, height: 12, color: "#818cf8" }} />
-                  <span style={{ fontSize: 12, color: "#a5b4fc", fontWeight: 600, whiteSpace: "nowrap" }}>{replyingTo}</span>
-                  <motion.button whileTap={{ scale: 0.85 }} onClick={() => setReplyingTo(null)} style={{ background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex", alignItems: "center" }}>
-                    <X style={{ width: 11, height: 11, color: "rgba(165,180,252,0.60)" }} />
-                  </motion.button>
-                </div>
-              )}
-            </div>
-
-            {/* ── Input row ── */}
-            <div style={{ padding: "10px 14px 0", display: "flex", alignItems: "center", gap: 10, position: "relative" }}>
-              
-                {showEmojiPicker && <EmojiPicker onSelect={(e) => setCommentInput((v) => v + e)} onClose={() => setShowEmojiPicker(false)} />}
-              
-
-              {/* Autocomplete overlay dismiss */}
-              {hasCommentAutocomplete && (
-                <div className="fixed inset-0 z-40" onClick={() => setShowCommentAutocomplete(false)} />
-              )}
-
-              <div style={{ flex: 1, position: "relative" }}>
-                {/* Autocomplete dropdown */}
-                
-                  {hasCommentAutocomplete && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 8, scale: 0.97 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      transition={{ duration: 0.16 }}
-                      style={{
-                        position: "absolute", bottom: "calc(100% + 8px)", left: 0, right: 0, zIndex: 55,
-                        background: "rgba(16,16,30,0.97)", backdropFilter: "blur(28px)", WebkitBackdropFilter: "blur(28px)",
-                        border: "0.5px solid rgba(255,255,255,0.12)", borderRadius: 18,
-                        boxShadow: "0 -8px 32px rgba(0,0,0,0.50), inset 0 1px 0 rgba(255,255,255,0.06)",
-                        overflow: "hidden",
-                      }}
-                    >
-                      {commentHashSuggestions.map((h, i) => (
-                        <motion.button key={h} whileTap={{ scale: 0.97 }} onClick={() => handleCommentSelectHash(h)}
-                          style={{
-                            display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "11px 16px",
-                            background: "transparent", border: "none",
-                            borderBottom: i < commentHashSuggestions.length - 1 || commentUserSuggestions.length > 0 ? "0.5px solid rgba(255,255,255,0.06)" : "none",
-                            cursor: "pointer",
-                          }}
-                        >
-                          <span style={{ fontSize: 14, color: "#818cf8", fontWeight: 700 }}>#</span>
-                          <span style={{ fontSize: 14, color: "rgba(255,255,255,0.80)", fontWeight: 500 }}>{h}</span>
-                        </motion.button>
-                      ))}
-                      {commentUserSuggestions.map((u, i) => (
-                        <motion.button key={u.handle} whileTap={{ scale: 0.97 }} onClick={() => handleCommentSelectUser(u.handle)}
-                          style={{
-                            display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "9px 16px",
-                            background: "transparent", border: "none",
-                            borderBottom: i < commentUserSuggestions.length - 1 ? "0.5px solid rgba(255,255,255,0.06)" : "none",
-                            cursor: "pointer",
-                          }}
-                        >
-                          <img src={u.avatar} alt={u.name} style={{ width: 26, height: 26, borderRadius: "50%", objectFit: "cover", border: "1px solid rgba(99,102,241,0.25)" }} />
-                          <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-                            <span style={{ fontSize: 14, color: "rgba(255,255,255,0.85)", fontWeight: 600 }}>{u.name}</span>
-                            <span style={{ fontSize: 12, color: "rgba(255,255,255,0.35)" }}>{u.handle}</span>
-                          </div>
-                        </motion.button>
-                      ))}
-                    </motion.div>
-                  )}
-                
-
-                <AnimatePresence mode="wait">
-                  {voiceState !== "idle" ? (
-                    /* ── Enregistrement vocal ── */
-                    <motion.div key="voice-rec"
-                      initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.97 }}
-                      transition={{ duration: 0.13 }}
-                      style={{ display: "flex", alignItems: "center", gap: 10, minHeight: 46, borderRadius: 22, padding: "8px 14px", background: "rgba(255,255,255,0.09)", border: "0.5px solid rgba(255,255,255,0.18)" }}
-                    >
-                      {/* Annuler */}
-                      <motion.button type="button" whileTap={{ scale: 0.88 }}
-                        onPointerDown={(e) => { e.preventDefault(); cancelVoice(); }}
-                        style={{ background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex", flexShrink: 0 }}
-                      >
-                        <X style={{ width: 16, height: 16, color: "rgba(255,255,255,0.40)" }} />
-                      </motion.button>
-
-                      {/* Statut / waveform */}
-                      <div style={{ flex: 1 }}>
-                        {voiceState === "uploading" ? (
-                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <motion.div animate={{ rotate: 360 }} transition={{ duration: 0.8, repeat: Infinity, ease: "linear" }}>
-                              <Loader2 style={{ width: 14, height: 14, color: "#818cf8" }} />
-                            </motion.div>
-                            <span style={{ fontSize: 13, color: "rgba(255,255,255,0.40)" }}>Envoi…</span>
-                          </div>
-                        ) : (
-                          <div style={{ display: "flex", alignItems: "center", gap: 3, height: 24 }}>
-                            {Array.from({ length: 20 }).map((_, i) => (
-                              <motion.div key={i}
-                                style={{ width: 3, borderRadius: 2, background: "rgba(30,30,40,0.70)" }}
-                                animate={{ height: [4, 4 + Math.random() * 18, 4] }}
-                                transition={{ duration: 0.7, repeat: Infinity, delay: i * 0.07, ease: "easeInOut" }}
-                              />
-                            ))}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Timer + bouton envoyer */}
-                      {voiceState === "recording" && (
-                        <>
-                          <VoiceTimer startTime={voiceStartRef.current} />
-                          <motion.button type="button" whileTap={{ scale: 0.88 }} onClick={handleMicSend}
-                            style={{ width: 30, height: 30, borderRadius: "50%", background: "#6366f1", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
-                          >
-                            <Send style={{ width: 13, height: 13, color: "#fff" }} />
-                          </motion.button>
-                        </>
-                      )}
-                    </motion.div>
-                  ) : (
-                    /* ── Composer normal ── */
-                    <motion.div key="compose"
-                      initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.97 }}
-                      transition={{ duration: 0.13 }}
-                      style={{ display: "flex", alignItems: "flex-end", gap: 8 }}
-                    >
-                      {/* Encadré texte */}
-                      <div style={{ flex: 1, display: "flex", alignItems: "flex-end", gap: 10, minHeight: 46, borderRadius: 22, padding: "8px 14px", background: boldMode ? "rgba(99,102,241,0.12)" : "rgba(255,255,255,0.07)", border: boldMode ? "0.5px solid rgba(99,102,241,0.45)" : "0.5px solid rgba(99,102,241,0.28)", transition: "all 0.2s" }}>
-                        <HighlightInput
-                          inputRef={inputRef}
-                          value={commentInput}
-                          onChange={(v) => { setCommentInput(v); setShowCommentAutocomplete(true); }}
-                          onFocus={() => { setShowEmojiPicker(false); }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" && !e.shiftKey && !hasCommentAutocomplete) {
-                              e.preventDefault();
-                              handleSendComment();
-                            }
-                          }}
-                          placeholder={replyingTo ? `Répondre à @${replyingTo}…` : "Écrire un commentaire…"}
-                          fontWeight={boldMode ? 700 : 400}
-                          placeholderClassName="placeholder:text-[rgba(144,144,168,0.35)]"
-                          multiline
-                          maxHeight={140}
-                          minHeight={22}
-                        />
-                        <motion.button whileTap={commentInput.trim() && !submittingComment ? { scale: 0.82 } : {}} onClick={handleSendComment} disabled={!commentInput.trim() || submittingComment} style={{ background: "none", border: "none", cursor: commentInput.trim() && !submittingComment ? "pointer" : "default", padding: 0, display: "flex", flexShrink: 0, alignSelf: "flex-end", paddingBottom: 6 }}>
-                          {submittingComment ? (
-                            <motion.div animate={{ rotate: 360 }} transition={{ duration: 0.8, repeat: Infinity, ease: "linear" }}><Loader2 style={{ width: 17, height: 17, color: "#818cf8" }} /></motion.div>
-                          ) : (
-                            <Send style={{ width: 17, height: 17, color: commentInput.trim() ? "#818cf8" : "rgba(255,255,255,0.16)", transition: "color 0.2s" }} />
-                          )}
-                        </motion.button>
-                      </div>
-
-                      {/* Micro — à droite de l'encadré */}
-                      <motion.button type="button" whileTap={{ scale: 0.88 }} onClick={handleMicClick}
-                        style={{
-                          height: 46, width: 46, borderRadius: 22, flexShrink: 0,
-                          background: "rgba(255,255,255,0.07)", border: "0.5px solid rgba(255,255,255,0.18)",
-                          display: "flex", alignItems: "center", justifyContent: "center",
-                          cursor: myUserId ? "pointer" : "not-allowed",
-                          alignSelf: "flex-end",
-                        }}
-                      >
-                        <Mic style={{ width: 18, height: 18, color: "rgba(255,255,255,0.65)" }} />
-                      </motion.button>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-            </div>
-
-            {/* ── Formatting toolbar (toujours visible en mode commentaires : layout stable) ── */}
-            <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 16px 14px" }}>
-              {/* GIF */}
-              <motion.button whileTap={{ scale: 0.82 }} onClick={() => setGifOpen(true)} style={{ background: gifOpen ? "rgba(99,102,241,0.20)" : "none", border: gifOpen ? "0.5px solid rgba(99,102,241,0.40)" : "none", borderRadius: 8, cursor: "pointer", padding: "6px 8px", display: "flex", transition: "all 0.18s" }}>
-                <span style={{ fontSize: 13, fontWeight: 800, color: gifOpen ? "#818cf8" : "rgba(99,102,241,0.75)", fontFamily: "monospace", letterSpacing: "0.04em" }}>GIF</span>
-              </motion.button>
-              {/* Hashtag */}
-              <motion.button whileTap={{ scale: 0.82 }} onClick={insertHashtag} style={{ background: "none", border: "none", cursor: "pointer", padding: "6px", display: "flex" }}>
-                <Hash style={{ width: 22, height: 22, color: "rgba(99,102,241,0.75)", strokeWidth: 1.8 }} />
-              </motion.button>
-              {/* Bold */}
-              <motion.button whileTap={{ scale: 0.82 }} onClick={() => setBoldMode((v) => !v)}
-                style={{ background: boldMode ? "rgba(99,102,241,0.20)" : "none", border: boldMode ? "0.5px solid rgba(99,102,241,0.40)" : "none", borderRadius: 8, cursor: "pointer", padding: "6px 8px", display: "flex", transition: "all 0.18s" }}
-              >
-                <Bold style={{ width: 22, height: 22, color: boldMode ? "#818cf8" : "rgba(99,102,241,0.75)", strokeWidth: boldMode ? 2.5 : 1.8 }} />
-              </motion.button>
-              {/* Important / Bookmark */}
-              <motion.button whileTap={{ scale: 0.82 }} onClick={toggleSave}
-                style={{ background: isSaved ? "rgba(99,102,241,0.20)" : "none", border: isSaved ? "0.5px solid rgba(99,102,241,0.40)" : "none", borderRadius: 8, cursor: "pointer", padding: "6px 8px", display: "flex", transition: "all 0.18s", marginLeft: "auto" }}
-              >
-                <Bookmark style={{ width: 22, height: 22, color: isSaved ? "#818cf8" : "rgba(99,102,241,0.75)", fill: isSaved ? "#818cf8" : "none", strokeWidth: isSaved ? 2 : 1.8 }} />
-              </motion.button>
-            </div>
-            </div>{/* end maxWidth wrapper */}
-          </motion.div>
-        )}
       </div>
 
       {/* ── Modals ── */}

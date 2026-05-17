@@ -77,15 +77,15 @@ export function VoicePlayer({ url, duration, msgId }: Props) {
         whileTap={{ scale: 0.88 }}
         style={{
           width: 34, height: 34, borderRadius: "50%", flexShrink: 0,
-          background: "rgba(99,102,241,0.18)",
-          border: "0.5px solid rgba(99,102,241,0.35)",
+          background: "rgba(255,255,255,0.12)",
+          border: "0.5px solid rgba(255,255,255,0.18)",
           display: "flex", alignItems: "center", justifyContent: "center",
           cursor: "pointer",
         }}
       >
         {playing
-          ? <Pause style={{ width: 14, height: 14, color: "#a5b4fc", fill: "#a5b4fc" }} />
-          : <Play style={{ width: 14, height: 14, color: "#a5b4fc", fill: "#a5b4fc", marginLeft: 1 }} />
+          ? <Pause style={{ width: 14, height: 14, color: "rgba(255,255,255,0.85)", fill: "rgba(255,255,255,0.85)" }} />
+          : <Play style={{ width: 14, height: 14, color: "rgba(255,255,255,0.85)", fill: "rgba(255,255,255,0.85)", marginLeft: 1 }} />
         }
       </motion.button>
 
@@ -98,7 +98,7 @@ export function VoicePlayer({ url, duration, msgId }: Props) {
               width: 3, borderRadius: 2, flexShrink: 0,
               height: `${Math.round(h * 100)}%`,
               background: i < passedIdx
-                ? "rgba(165,180,252,0.80)"
+                ? "rgba(255,255,255,0.80)"
                 : "rgba(255,255,255,0.18)",
               transition: "background 0.08s",
             }}
