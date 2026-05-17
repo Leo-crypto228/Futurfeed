@@ -1430,6 +1430,51 @@ app.post("/make-server-218684af/comments/:commentId/reactions", async (c) => {
   }
 });
 
+// PUT /comments/:commentId — Modifier le contenu d'un commentaire
+app.put("/make-server-218684af/comments/:commentId", async (c) => {
+  try {
+    const commentId = c.req.param("commentId");
+    const body = await c.req.json();
+    const { userId, content } = body;
+    if (!userId || !content?.trim()) return c.json({ error: "userId et content requis." }, 400);
+    const raw = await kv.get(`ff:comment:${commentId}`);
+    if (!raw) return c.json({ error: "Commentaire introuvable." }, 404);
+    const comment = JSON.parse(raw);
+    if (comment.userId !== userId) return c.json({ error: "Non autorisé." }, 403);
+    comment.content = content.trim();
+    comment.updatedAt = new Date().toISOString();
+    await kv.set(`ff:comment:${commentId}`, JSON.stringify(comment));
+    if (comment.createdAt) comment.timestamp = relativeTime(comment.createdAt);
+    return c.json({ success: true, comment });
+  } catch (err) {
+    return c.json({ error: `Échec modification: ${err}` }, 500);
+  }
+});
+
+// DELETE /comments/:commentId — Supprimer un commentaire
+app.delete("/make-server-218684af/comments/:commentId", async (c) => {
+  try {
+    const commentId = c.req.param("commentId");
+    const userId = c.req.query("userId");
+    if (!userId) return c.json({ error: "userId requis." }, 400);
+    const raw = await kv.get(`ff:comment:${commentId}`);
+    if (!raw) return c.json({ error: "Commentaire introuvable." }, 404);
+    const comment = JSON.parse(raw);
+    if (comment.userId !== userId) return c.json({ error: "Non autorisé." }, 403);
+    await kv.del(`ff:comment:${commentId}`);
+    // Retirer de l'index du post
+    const listKey = `ff:comments:post:${comment.postId}`;
+    const listRaw = await kv.get(listKey);
+    if (listRaw) {
+      const list: string[] = JSON.parse(listRaw);
+      await kv.set(listKey, JSON.stringify(list.filter((id) => id !== commentId)));
+    }
+    return c.json({ success: true });
+  } catch (err) {
+    return c.json({ error: `Échec suppression: ${err}` }, 500);
+  }
+});
+
 // DELETE /comments/:commentId/reactions/:userId — Retirer sa réaction
 app.delete("/make-server-218684af/comments/:commentId/reactions/:userId", async (c) => {
   try {

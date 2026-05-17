@@ -34,7 +34,7 @@ const CommunityMemberContext = createContext<CommunityMemberContextValue>({
 });
 
 export function CommunityMemberProvider({ children }: { children: ReactNode }) {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const userId = user?.username ?? "";
 
   const [statuses, setStatuses] = useState<Record<string, boolean>>({});
@@ -62,12 +62,13 @@ export function CommunityMemberProvider({ children }: { children: ReactNode }) {
     }
   }, [userId]);
 
-  // Recharger quand l'user change
   useEffect(() => {
-    if (!userId || userId === prevUserIdRef.current) return;
+    if (authLoading) return; // Keep loading=true until auth resolves
+    if (!userId) { setLoading(false); return; }
+    if (userId === prevUserIdRef.current) return;
     prevUserIdRef.current = userId;
     refresh(userId);
-  }, [userId, refresh]);
+  }, [userId, authLoading, refresh]);
 
   const isMember = useCallback(
     (communityId: string) => statuses[communityId] === true,

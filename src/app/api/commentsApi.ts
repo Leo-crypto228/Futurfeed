@@ -139,7 +139,7 @@ export interface CommentReactionResult {
   reactionCounts: Record<ReactionType, number>;
 }
 
-/** Toggle une réaction sur un commentaire — direct Supabase, optimistic-ready */
+/** Toggle une réaction sur un commentaire — via le backend KV */
 export async function reactToComment(
   commentId: string,
   userId: string,
@@ -147,39 +147,16 @@ export async function reactToComment(
   commentAuthorId?: string,
   postId?: string,
 ): Promise<CommentReactionResult> {
-  const { data: existing } = await supabase
-    .from("comment_reactions")
-    .select("reaction_type")
-    .eq("comment_id", commentId)
-    .eq("user_id", userId)
-    .maybeSingle();
+  const res = await fetch(`${BASE}/comments/${encodeURIComponent(commentId)}/reactions`, {
+    method: "POST",
+    headers: HEADERS,
+    body: JSON.stringify({ userId, reactionType }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || `Erreur serveur ${res.status}`);
 
-  const isToggleOff = existing?.reaction_type === reactionType;
-
-  if (isToggleOff) {
-    await supabase.from("comment_reactions").delete()
-      .eq("comment_id", commentId).eq("user_id", userId);
-  } else {
-    await supabase.from("comment_reactions").upsert({
-      comment_id: commentId,
-      user_id: userId,
-      reaction_type: reactionType,
-    });
-  }
-
-  const { data: all } = await supabase
-    .from("comment_reactions")
-    .select("reaction_type")
-    .eq("comment_id", commentId);
-
-  const counts: Record<ReactionType, number> = { Actionnable: 0, Motivant: 0 };
-  for (const r of all ?? []) {
-    if (r.reaction_type === "Actionnable") counts.Actionnable++;
-    else if (r.reaction_type === "Motivant") counts.Motivant++;
-  }
-
-  // Notifier l'auteur du commentaire (fire-and-forget, seulement si ajout)
-  if (!isToggleOff && commentAuthorId && commentAuthorId !== userId) {
+  // Notifier (fire-and-forget, seulement si ajout)
+  if (!data.removed && commentAuthorId && commentAuthorId !== userId) {
     fetch(`${BASE}/notifications/comment-reaction`, {
       method: "POST",
       headers: HEADERS,
@@ -187,12 +164,37 @@ export async function reactToComment(
     }).catch(() => {});
   }
 
-  return {
-    success: true,
-    removed: isToggleOff,
-    myReaction: isToggleOff ? null : reactionType,
-    reactionCounts: counts,
-  };
+  return data as CommentReactionResult;
+}
+
+/** Modifier le contenu d'un commentaire texte */
+export async function updateComment(
+  commentId: string,
+  userId: string,
+  content: string,
+): Promise<{ success: boolean; comment: ApiComment }> {
+  const res = await fetch(`${BASE}/comments/${encodeURIComponent(commentId)}`, {
+    method: "PUT",
+    headers: HEADERS,
+    body: JSON.stringify({ userId, content }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || `Erreur serveur ${res.status}`);
+  return data;
+}
+
+/** Supprimer un commentaire (texte ou vocal) */
+export async function deleteComment(
+  commentId: string,
+  userId: string,
+): Promise<{ success: boolean }> {
+  const res = await fetch(
+    `${BASE}/comments/${encodeURIComponent(commentId)}?userId=${encodeURIComponent(userId)}`,
+    { method: "DELETE", headers: HEADERS },
+  );
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || `Erreur serveur ${res.status}`);
+  return data;
 }
 
 /** Charger counts + myReaction pour une liste de commentaires depuis Supabase */

@@ -4,7 +4,7 @@ import { MY_USER_ID as _authUserId, MY_USER_NAME as _authUserName, MY_USER_AVATA
 import { motion, AnimatePresence } from "motion/react";
 import {
   ArrowLeft, MessageCircle, Share2, Bookmark,
-  Send, Hash, Bold, Smile, X, Check, MoreHorizontal, Reply,
+  Send, Hash, Bold, X, Check, MoreHorizontal, Reply,
   AlertTriangle, TrendingDown, ThumbsDown, Plus, Loader2, WifiOff, ChevronDown, ChevronUp, Mic,
 } from "lucide-react";
 import { VoicePlayer } from "../components/VoicePlayer";
@@ -16,7 +16,7 @@ import { searchHashtags, searchUsers } from "../data/suggestions";
 import { HighlightInput } from "../components/HighlightInput";
 import {
   createComment, getPostComments, createReply, getCommentReplies,
-  reactToComment, removeReaction, loadReactionCounts,
+  reactToComment, removeReaction, loadReactionCounts, updateComment, deleteComment,
   type ApiComment, type ApiReply, type CommentType, type ReactionType, type EloCommentType,
   REACTION_TYPES,
 } from "../api/commentsApi";
@@ -113,21 +113,23 @@ function VoiceTimer({ startTime }: { startTime: number }) {
     return () => clearInterval(id);
   }, [startTime]);
   const m = Math.floor(elapsed / 60), s = elapsed % 60;
-  return <span style={{ fontSize: 12, color: "#f87171", fontVariantNumeric: "tabular-nums", fontWeight: 600, flexShrink: 0 }}>{m}:{s.toString().padStart(2, "0")}</span>;
+  return <span style={{ fontSize: 12, color: "rgba(30,30,40,0.75)", fontVariantNumeric: "tabular-nums", fontWeight: 600, flexShrink: 0 }}>{m}:{s.toString().padStart(2, "0")}</span>;
 }
 
 /* ── ApiCommentRow — commentaire backend avec réactions persistées + réponses inline ── */
 function ApiCommentRow({
-  comment, isTopConseil, onReplyClick, pendingReply,
+  comment, isTopConseil, onReplyClick, pendingReply, currentUserId, onDelete, onUpdate,
 }: {
   comment: ApiComment; isTopConseil: boolean;
   onReplyClick: (commentId: string, authorName: string) => void;
   pendingReply?: ApiReply | null;
+  currentUserId: string;
+  onDelete: (commentId: string) => void;
+  onUpdate: (commentId: string, newContent: string) => void;
 }) {
   const navigate = useNavigate();
   const [activeReaction, setActiveReaction] = useState<ReactionType | null>((comment.myReaction as ReactionType) ?? null);
   const [reactionCounts, setReactionCounts] = useState<Record<string, number>>(comment.reactionCounts || {});
-  const [reactionPending, setReactionPending] = useState(false);
   // Synchro quand Supabase charge myReaction après le premier rendu
   const hydratedRef = useRef(false);
   useEffect(() => {
@@ -140,6 +142,12 @@ function ApiCommentRow({
   const [showReplies, setShowReplies] = useState(false);
   const [replies, setReplies] = useState<ApiReply[]>([]);
   const [loadingReplies, setLoadingReplies] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [editContent, setEditContent] = useState(comment.content);
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  const isOwn = !!currentUserId && comment.userId === currentUserId;
 
   // Merge server-loaded replies with any optimistic pending reply from parent (no extra hooks needed)
   const displayReplies = (() => {
@@ -149,17 +157,13 @@ function ApiCommentRow({
   })();
   const isShowingReplies = showReplies || !!pendingReply;
 
-  const totalReactions = Object.values(reactionCounts).reduce((a, b) => a + b, 0);
-
-  // Réaction unifiée — toggle via un seul POST (le backend gère le toggle)
+  // Réaction unifiée — toggle via un seul POST, fire-and-forget pour l'UI
   const handleToggleReaction = useCallback(async (rt: ReactionType) => {
-    if (reactionPending) return;
     const willRemove = activeReaction === rt;
     const prevReaction = activeReaction;
     const prevCounts = { ...reactionCounts };
 
-    // Optimiste
-    setReactionPending(true);
+    // Optimiste immédiat (pas de loading visible)
     if (willRemove) {
       setActiveReaction(null);
       setReactionCounts((c) => ({ ...c, [rt]: Math.max(0, (c[rt] || 0) - 1) }));
@@ -171,22 +175,29 @@ function ApiCommentRow({
         return next;
       });
     }
-    setShowReactionMenu(false);
 
-    try {
-      const result = await reactToComment(comment.id, MY_USER_ID, rt, comment.userId, comment.postId);
-      // Sync avec réponse serveur
+    reactToComment(comment.id, currentUserId, rt, comment.userId, comment.postId).then((result) => {
       setActiveReaction(result.myReaction);
       setReactionCounts(result.reactionCounts);
-    } catch (err) {
+    }).catch((err) => {
       console.error("Erreur réaction commentaire:", err);
-      // Rollback
       setActiveReaction(prevReaction);
       setReactionCounts(prevCounts);
+    });
+  }, [comment.id, comment.userId, comment.postId, activeReaction, reactionCounts, currentUserId]);
+
+  const handleSaveEdit = useCallback(async () => {
+    if (!editContent.trim() || savingEdit) return;
+    setSavingEdit(true);
+    try {
+      await onUpdate(comment.id, editContent.trim());
+      setEditMode(false);
+    } catch (err) {
+      console.error("Erreur modification commentaire:", err);
     } finally {
-      setReactionPending(false);
+      setSavingEdit(false);
     }
-  }, [comment.id, activeReaction, reactionCounts, reactionPending]);
+  }, [comment.id, editContent, savingEdit, onUpdate]);
 
   const loadReplies = async () => {
     if (isShowingReplies) { setShowReplies(false); return; }
@@ -199,12 +210,12 @@ function ApiCommentRow({
     finally { setLoadingReplies(false); }
   };
 
-  const isActive = activeReaction !== null;
   const handle = comment.author.toLowerCase().replace(/\s+/g, "_");
+  const isVoice = !!comment.voiceUrl;
 
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.22 }}
-      style={{ display: "flex", gap: 12, paddingBottom: 20, borderBottom: "0.5px solid rgba(255,255,255,0.05)", position: "relative" }}
+      style={{ display: "flex", gap: 12, paddingBottom: 20, borderBottom: "0.5px solid rgba(99,102,241,0.12)", position: "relative" }}
     >
       {isTopConseil && <ConseilGlowBar />}
       {comment.author === "Anonyme" ? (
@@ -223,26 +234,91 @@ function ApiCommentRow({
         </div>
       )}
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: comment.commentType ? 6 : 5, flexWrap: "wrap" }}>
-          <span style={{ fontSize: 14, fontWeight: 700, color: "rgba(255,255,255,0.90)" }}>{comment.author}</span>
-          {comment.author !== "Anonyme" && <span style={{ fontSize: "0.70em", color: "rgba(255,255,255,0.30)", fontWeight: 400 }}>{handle}</span>}
-          <span style={{ fontSize: 12, color: "rgba(255,255,255,0.22)" }}>•</span>
-          <span style={{ fontSize: 12, color: "rgba(255,255,255,0.28)" }}>{comment.timestamp ?? "À l'instant"}</span>
+        {/* Header: author + three-dot menu */}
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: comment.commentType ? 6 : 5 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 14, fontWeight: 700, color: "rgba(255,255,255,0.90)" }}>{comment.author}</span>
+            {comment.author !== "Anonyme" && <span style={{ fontSize: "0.70em", color: "rgba(255,255,255,0.30)", fontWeight: 400 }}>{handle}</span>}
+            <span style={{ fontSize: 12, color: "rgba(255,255,255,0.22)" }}>•</span>
+            <span style={{ fontSize: 12, color: "rgba(255,255,255,0.28)" }}>{comment.timestamp ?? "À l'instant"}</span>
+          </div>
+          {/* Three-dot menu — own comments only */}
+          {isOwn && (
+            <div style={{ position: "relative", flexShrink: 0 }}>
+              <motion.button whileTap={{ scale: 0.85 }} onClick={() => setShowMenu((v) => !v)}
+                style={{ background: "none", border: "none", cursor: "pointer", padding: "2px 4px", display: "flex", alignItems: "center" }}
+              >
+                <MoreHorizontal style={{ width: 16, height: 16, color: "rgba(255,255,255,0.35)" }} />
+              </motion.button>
+              <AnimatePresence>
+                {showMenu && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setShowMenu(false)} />
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.92, y: -4 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.92, y: -4 }}
+                      transition={{ duration: 0.13 }}
+                      style={{ position: "absolute", right: 0, top: "calc(100% + 4px)", zIndex: 50, minWidth: 130, borderRadius: 14, overflow: "hidden", background: "linear-gradient(135deg, rgba(48,48,64,0.97) 0%, rgba(36,36,52,0.97) 100%)", border: "0.5px solid rgba(255,255,255,0.10)", boxShadow: "0 8px 28px rgba(0,0,0,0.50)" }}
+                    >
+                      {!isVoice && (
+                        <motion.button whileTap={{ scale: 0.96 }} onClick={() => { setEditMode(true); setShowMenu(false); }}
+                          style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "11px 14px", background: "none", border: "none", borderBottom: "0.5px solid rgba(255,255,255,0.07)", cursor: "pointer" }}
+                        >
+                          <span style={{ fontSize: 13, color: "rgba(255,255,255,0.80)", fontWeight: 500 }}>Modifier</span>
+                        </motion.button>
+                      )}
+                      <motion.button whileTap={{ scale: 0.96 }} onClick={() => { onDelete(comment.id); setShowMenu(false); }}
+                        style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "11px 14px", background: "none", border: "none", cursor: "pointer" }}
+                      >
+                        <span style={{ fontSize: 13, color: "#f87171", fontWeight: 500 }}>Supprimer</span>
+                      </motion.button>
+                    </motion.div>
+                  </>
+                )}
+              </AnimatePresence>
+            </div>
+          )}
         </div>
+
         {comment.commentType && (
           <div style={{ marginBottom: 7 }}>
             <TagPill tag={comment.commentType as CommentTag} small />
           </div>
         )}
-        <div style={{ fontSize: 14, color: "rgba(255,255,255,0.78)", lineHeight: 1.55, margin: "0 0 6px", whiteSpace: "pre-wrap", wordBreak: "break-word", overflowWrap: "anywhere" }}>
-          {comment.voiceUrl
-            ? <VoicePlayer url={comment.voiceUrl} duration={comment.voiceDuration ?? 0} msgId={comment.id} />
-            : isGifUrl(comment.content)
-              ? <GifMessage url={comment.content} />
-              : renderPostText(comment.content, navigate)
-          }
-        </div>
-        {(() => {
+
+        {/* Content or edit mode */}
+        {editMode && !isVoice ? (
+          <div style={{ marginBottom: 8 }}>
+            <textarea
+              autoFocus
+              value={editContent}
+              onChange={(e) => setEditContent(e.target.value)}
+              onInput={(e) => { const t = e.currentTarget; t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight, 200) + "px"; }}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSaveEdit(); } if (e.key === "Escape") setEditMode(false); }}
+              rows={2}
+              style={{ width: "100%", background: "rgba(99,102,241,0.10)", border: "0.5px solid rgba(99,102,241,0.35)", borderRadius: 12, padding: "8px 12px", fontSize: 14, color: "#f0f0f5", outline: "none", resize: "none", lineHeight: 1.5, fontFamily: "inherit", caretColor: "#6366f1" }}
+              className="placeholder:text-[rgba(144,144,168,0.35)]"
+            />
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 6 }}>
+              <motion.button whileTap={{ scale: 0.90 }} onClick={() => setEditMode(false)}
+                style={{ padding: "5px 12px", borderRadius: 999, background: "rgba(255,255,255,0.07)", border: "0.5px solid rgba(255,255,255,0.12)", cursor: "pointer", fontSize: 12, color: "rgba(255,255,255,0.55)" }}
+              >Annuler</motion.button>
+              <motion.button whileTap={{ scale: 0.90 }} onClick={handleSaveEdit} disabled={savingEdit || !editContent.trim()}
+                style={{ padding: "5px 12px", borderRadius: 999, background: "#6366f1", border: "none", cursor: editContent.trim() && !savingEdit ? "pointer" : "default", fontSize: 12, color: "#fff", fontWeight: 600, opacity: editContent.trim() && !savingEdit ? 1 : 0.5 }}
+              >{savingEdit ? "…" : "Enregistrer"}</motion.button>
+            </div>
+          </div>
+        ) : (
+          <div style={{ fontSize: 14, color: "rgba(255,255,255,0.78)", lineHeight: 1.55, margin: "0 0 6px", whiteSpace: "pre-wrap", wordBreak: "break-word", overflowWrap: "anywhere" }}>
+            {comment.voiceUrl
+              ? <VoicePlayer url={comment.voiceUrl} duration={comment.voiceDuration ?? 0} msgId={comment.id} />
+              : isGifUrl(comment.content)
+                ? <GifMessage url={comment.content} />
+                : renderPostText(comment.content, navigate)
+            }
+          </div>
+        )}
+
+        {!editMode && (() => {
           const tags = extractHashtagsFromText(comment.content);
           return tags.length > 0 ? (
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
@@ -252,30 +328,31 @@ function ApiCommentRow({
             </div>
           ) : null;
         })()}
+
         <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-          {/* Actionnable / Motivant reactions */}
+          {/* Actionnable / Motivant reactions — solid fill when active */}
           {(["Actionnable", "Motivant"] as ReactionType[]).map((rt) => {
             const isRtActive = activeReaction === rt;
             const count = reactionCounts[rt] || 0;
+            const activeBg = rt === "Actionnable" ? "#6366f1" : "#3b82f6";
             return (
               <motion.button
                 key={rt}
                 onClick={() => handleToggleReaction(rt)}
-                whileTap={reactionPending ? {} : { scale: 0.90 }}
-                disabled={reactionPending}
+                whileTap={{ scale: 0.90 }}
                 style={{
                   display: "inline-flex", alignItems: "center", gap: 4,
                   padding: "4px 11px", borderRadius: 999,
-                  background: isRtActive ? "rgba(99,102,241,0.14)" : "rgba(255,255,255,0.04)",
-                  border: isRtActive ? "1px solid rgba(99,102,241,0.50)" : "0.5px solid rgba(255,255,255,0.10)",
-                  cursor: reactionPending ? "default" : "pointer",
+                  background: isRtActive ? activeBg : "rgba(255,255,255,0.04)",
+                  border: isRtActive ? `1px solid ${activeBg}` : "0.5px solid rgba(255,255,255,0.10)",
+                  cursor: "pointer",
                   fontSize: 12, fontWeight: isRtActive ? 600 : 400,
-                  color: isRtActive ? "#a5b4fc" : "rgba(255,255,255,0.40)",
+                  color: isRtActive ? "#fff" : "rgba(255,255,255,0.40)",
                   transition: "all 0.16s", userSelect: "none",
                 }}
               >
                 <span>{rt}</span>
-                {count > 0 && <span style={{ fontSize: 11, fontWeight: 700, color: isRtActive ? "#a5b4fc" : "rgba(255,255,255,0.28)" }}>{count}</span>}
+                {count > 0 && <span style={{ fontSize: 11, fontWeight: 700, color: isRtActive ? "rgba(255,255,255,0.85)" : "rgba(255,255,255,0.28)" }}>{count}</span>}
               </motion.button>
             );
           })}
@@ -301,30 +378,28 @@ function ApiCommentRow({
           )}
         </div>
         {/* Réponses inline */}
-        
-          {isShowingReplies && displayReplies.length > 0 && (
-            <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }}
-              style={{ overflow: "hidden", marginTop: 14, paddingLeft: 14, borderLeft: "2px solid rgba(99,102,241,0.20)" }}
-            >
-              {displayReplies.map((reply) => (
-                <motion.div key={reply.id} initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} style={{ display: "flex", gap: 10, marginBottom: 14 }}>
-                  <div style={{ width: 28, height: 28, borderRadius: "50%", overflow: "hidden", flexShrink: 0, border: "1px solid rgba(99,102,241,0.18)" }}>
-                    {reply.avatar ? <img src={reply.avatar} alt={reply.author} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                      : <div style={{ width: "100%", height: "100%", background: "linear-gradient(135deg,#6366f1,#a78bfa)", display: "flex", alignItems: "center", justifyContent: "center" }}><span style={{ fontSize: 10, fontWeight: 700, color: "#fff" }}>{reply.author.slice(0, 2).toUpperCase()}</span></div>}
+        {isShowingReplies && displayReplies.length > 0 && (
+          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }}
+            style={{ overflow: "hidden", marginTop: 14, paddingLeft: 14, borderLeft: "2px solid rgba(99,102,241,0.20)" }}
+          >
+            {displayReplies.map((reply) => (
+              <motion.div key={reply.id} initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} style={{ display: "flex", gap: 10, marginBottom: 14 }}>
+                <div style={{ width: 28, height: 28, borderRadius: "50%", overflow: "hidden", flexShrink: 0, border: "1px solid rgba(99,102,241,0.18)" }}>
+                  {reply.avatar ? <img src={reply.avatar} alt={reply.author} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                    : <div style={{ width: "100%", height: "100%", background: "linear-gradient(135deg,#6366f1,#a78bfa)", display: "flex", alignItems: "center", justifyContent: "center" }}><span style={{ fontSize: 10, fontWeight: 700, color: "#fff" }}>{reply.author.slice(0, 2).toUpperCase()}</span></div>}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 4 }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: "rgba(255,255,255,0.85)" }}>{reply.author}</span>
+                    <span style={{ fontSize: "0.68em", color: "rgba(255,255,255,0.28)" }}>{reply.author.toLowerCase().replace(/\s+/g, "_")}</span>
+                    <span style={{ fontSize: 11, color: "rgba(255,255,255,0.22)" }}>• {reply.timestamp ?? "À l'instant"}</span>
                   </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 4 }}>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: "rgba(255,255,255,0.85)" }}>{reply.author}</span>
-                      <span style={{ fontSize: "0.68em", color: "rgba(255,255,255,0.28)" }}>{reply.author.toLowerCase().replace(/\s+/g, "_")}</span>
-                      <span style={{ fontSize: 11, color: "rgba(255,255,255,0.22)" }}>• {reply.timestamp ?? "À l'instant"}</span>
-                    </div>
-                    <p style={{ fontSize: 13, color: "rgba(255,255,255,0.68)", lineHeight: 1.5, margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-word", overflowWrap: "anywhere" }}>{reply.content}</p>
-                  </div>
-                </motion.div>
-              ))}
-            </motion.div>
-          )}
-        
+                  <p style={{ fontSize: 13, color: "rgba(255,255,255,0.68)", lineHeight: 1.5, margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-word", overflowWrap: "anywhere" }}>{reply.content}</p>
+                </div>
+              </motion.div>
+            ))}
+          </motion.div>
+        )}
       </div>
     </motion.div>
   );
@@ -1101,96 +1176,97 @@ export function PostDetail() {
 
   const [commentInput, setCommentInput] = useState("");
 
+  const handleDeleteComment = useCallback(async (commentId: string) => {
+    setApiComments((prev) => prev.filter((c) => c.id !== commentId));
+    try {
+      await deleteComment(commentId, myUserId);
+    } catch (err) {
+      console.error("Erreur suppression commentaire:", err);
+    }
+  }, [myUserId]);
+
+  const handleUpdateComment = useCallback(async (commentId: string, newContent: string) => {
+    try {
+      const { comment: updated } = await updateComment(commentId, myUserId, newContent);
+      setApiComments((prev) => prev.map((c) => c.id === commentId ? { ...c, content: updated.content } : c));
+    } catch (err) {
+      console.error("Erreur modification commentaire:", err);
+      throw err;
+    }
+  }, [myUserId]);
+
   // ── Enregistrement vocal commentaire ──────────────────────────────────────
-  type VoiceRecState = "idle" | "armed" | "recording" | "uploading";
+  type VoiceRecState = "idle" | "recording" | "uploading";
   const [voiceState, setVoiceState] = useState<VoiceRecState>("idle");
   const voiceStateRef = useRef<VoiceRecState>("idle");
-  const voiceArmRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
   const voiceRecRef   = useRef<MediaRecorder | null>(null);
   const voiceChunks   = useRef<Blob[]>([]);
   const voiceStartRef = useRef<number>(0);
   const setVS = useCallback((s: VoiceRecState) => { voiceStateRef.current = s; setVoiceState(s); }, []);
 
   const cancelVoice = useCallback(() => {
-    if (voiceArmRef.current) { clearTimeout(voiceArmRef.current); voiceArmRef.current = null; }
     const rec = voiceRecRef.current;
     if (rec && rec.state !== "inactive") { rec.onstop = null; rec.stream.getTracks().forEach((t) => t.stop()); rec.stop(); }
     voiceRecRef.current = null; voiceChunks.current = [];
     setVS("idle");
   }, [setVS]);
 
-  const handleMicPointerDown = useCallback((e: React.PointerEvent) => {
-    e.preventDefault();
+  const handleMicClick = useCallback(async () => {
     if (!myUserId || voiceStateRef.current !== "idle") return;
-    (e.currentTarget as Element).setPointerCapture(e.pointerId);
+    try {
+      const mime = (() => {
+        if (typeof MediaRecorder === "undefined") return "";
+        for (const t of ["audio/webm;codecs=opus","audio/webm","audio/mp4","audio/aac"])
+          if (MediaRecorder.isTypeSupported(t)) return t;
+        return "";
+      })();
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+      voiceChunks.current = [];
+      rec.ondataavailable = (ev) => { if (ev.data.size > 0) voiceChunks.current.push(ev.data); };
+      rec.start(100); voiceRecRef.current = rec; voiceStartRef.current = Date.now();
+      setVS("recording"); navigator.vibrate?.(25);
+    } catch { setVS("idle"); }
+  }, [myUserId, setVS]);
+
+  const handleMicSend = useCallback(() => {
     const _userId = myUserId, _userName = myUserName, _avatar = myUserAvatar, _postId = postId;
-    setVS("armed");
-    const handleRelease = () => {
-      document.removeEventListener("pointerup", handleRelease);
-      document.removeEventListener("pointercancel", handleRelease);
-      const cur = voiceStateRef.current;
-      if (cur === "armed") {
-        if (voiceArmRef.current) { clearTimeout(voiceArmRef.current); voiceArmRef.current = null; }
-        setVS("idle"); return;
-      }
-      if (cur === "recording") {
-        const rec = voiceRecRef.current;
-        if (!rec || rec.state === "inactive") { setVS("idle"); return; }
-        const duration = Math.max(1, Math.round((Date.now() - voiceStartRef.current) / 1000));
-        rec.onstop = async () => {
-          const blob = new Blob(voiceChunks.current, { type: rec.mimeType || "audio/webm" });
-          rec.stream.getTracks().forEach((t) => t.stop());
-          voiceRecRef.current = null; voiceChunks.current = [];
-          if (blob.size < 1000) { setVS("idle"); return; }
-          setVS("uploading");
-          try {
-            const fd = new FormData();
-            const ext = (rec.mimeType || "").includes("mp4") ? "m4a" : "webm";
-            fd.append("file", blob, `voice.${ext}`);
-            const upRes = await fetch(
-              `https://${projectId}.supabase.co/functions/v1/make-server-218684af/upload-voice`,
-              { method: "POST", headers: { Authorization: `Bearer ${publicAnonKey}` }, body: fd }
-            );
-            const upData = await upRes.json();
-            if (!upData.url) throw new Error(upData.error || "Erreur upload");
-            const tempId = `temp-voice-${Date.now()}`;
-            const optimistic: ApiComment = {
-              id: tempId, postId: _postId, userId: _userId, author: _userName, avatar: _avatar,
-              content: "", voiceUrl: upData.url, voiceDuration: duration,
-              commentType: null, reactionCounts: { Actionnable: 0, Motivant: 0 },
-              repliesCount: 0, createdAt: new Date().toISOString(), timestamp: "À l'instant", myReaction: null,
-            };
-            setApiComments((prev) => [optimistic, ...prev]);
-            const { comment: saved } = await createComment({
-              postId: _postId, userId: _userId, author: _userName, avatar: _avatar,
-              content: "", voiceUrl: upData.url, voiceDuration: duration,
-            });
-            setApiComments((prev) => prev.map((c) => c.id === tempId ? saved : c));
-          } catch (err) { console.error("Erreur envoi vocal:", err); }
-          finally { setVS("idle"); }
-        };
-        rec.stop();
-      }
-    };
-    document.addEventListener("pointerup", handleRelease);
-    document.addEventListener("pointercancel", handleRelease);
-    voiceArmRef.current = setTimeout(async () => {
-      voiceArmRef.current = null;
+    const rec = voiceRecRef.current;
+    if (!rec || rec.state === "inactive") { setVS("idle"); return; }
+    const duration = Math.max(1, Math.round((Date.now() - voiceStartRef.current) / 1000));
+    rec.onstop = async () => {
+      const blob = new Blob(voiceChunks.current, { type: rec.mimeType || "audio/webm" });
+      rec.stream.getTracks().forEach((t) => t.stop());
+      voiceRecRef.current = null; voiceChunks.current = [];
+      if (blob.size < 1000) { setVS("idle"); return; }
+      setVS("uploading");
       try {
-        const mime = (() => {
-          if (typeof MediaRecorder === "undefined") return "";
-          for (const t of ["audio/webm;codecs=opus","audio/webm","audio/mp4","audio/aac"])
-            if (MediaRecorder.isTypeSupported(t)) return t;
-          return "";
-        })();
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
-        voiceChunks.current = [];
-        rec.ondataavailable = (ev) => { if (ev.data.size > 0) voiceChunks.current.push(ev.data); };
-        rec.start(100); voiceRecRef.current = rec; voiceStartRef.current = Date.now();
-        setVS("recording"); navigator.vibrate?.(25);
-      } catch { setVS("idle"); document.removeEventListener("pointerup", handleRelease); document.removeEventListener("pointercancel", handleRelease); }
-    }, 1500);
+        const fd = new FormData();
+        const ext = (rec.mimeType || "").includes("mp4") ? "m4a" : "webm";
+        fd.append("file", blob, `voice.${ext}`);
+        const upRes = await fetch(
+          `https://${projectId}.supabase.co/functions/v1/make-server-218684af/upload-voice`,
+          { method: "POST", headers: { Authorization: `Bearer ${publicAnonKey}` }, body: fd }
+        );
+        const upData = await upRes.json();
+        if (!upData.url) throw new Error(upData.error || "Erreur upload");
+        const tempId = `temp-voice-${Date.now()}`;
+        const optimistic: ApiComment = {
+          id: tempId, postId: _postId, userId: _userId, author: _userName, avatar: _avatar,
+          content: "", voiceUrl: upData.url, voiceDuration: duration,
+          commentType: null, reactionCounts: { Actionnable: 0, Motivant: 0 },
+          repliesCount: 0, createdAt: new Date().toISOString(), timestamp: "À l'instant", myReaction: null,
+        };
+        setApiComments((prev) => [optimistic, ...prev]);
+        const { comment: saved } = await createComment({
+          postId: _postId, userId: _userId, author: _userName, avatar: _avatar,
+          content: "", voiceUrl: upData.url, voiceDuration: duration,
+        });
+        setApiComments((prev) => prev.map((c) => c.id === tempId ? saved : c));
+      } catch (err) { console.error("Erreur envoi vocal:", err); }
+      finally { setVS("idle"); }
+    };
+    rec.stop();
   }, [myUserId, myUserName, myUserAvatar, postId, setVS]);
 
   // Tools always visible in comments view (layout stable, plus de croissance au focus)
@@ -1863,6 +1939,9 @@ export function PostDetail() {
                             isTopConseil={topApiConseilIds.includes(c.id)}
                             onReplyClick={handleApiReplyClick}
                             pendingReply={c.optimisticReply ?? null}
+                            currentUserId={myUserId}
+                            onDelete={handleDeleteComment}
+                            onUpdate={handleUpdateComment}
                           />
                         ))}
                       
@@ -1901,8 +1980,9 @@ export function PostDetail() {
         {(view === "comments") && (
           <motion.div
             initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: 0.2 }}
-            style={{ background: "#000000", borderTop: "0.5px solid rgba(255,255,255,0.07)", paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
+            style={{ background: "#000000", borderTop: "0.5px solid rgba(99,102,241,0.18)", paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
           >
+            <div style={{ maxWidth: 640, margin: "0 auto" }}>
             {/* ── Comment type pills row (toujours visible en mode commentaires : layout stable, pas de croissance au focus) ── */}
             <div style={{ display: "flex", gap: 8, padding: "10px 14px 0", overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
               {/* Reply indicator */}
@@ -1983,7 +2063,7 @@ export function PostDetail() {
                     <motion.div key="voice-rec"
                       initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.97 }}
                       transition={{ duration: 0.13 }}
-                      style={{ display: "flex", alignItems: "center", gap: 10, minHeight: 46, borderRadius: 22, padding: "8px 14px", background: "rgba(239,68,68,0.08)", border: "0.5px solid rgba(239,68,68,0.30)" }}
+                      style={{ display: "flex", alignItems: "center", gap: 10, minHeight: 46, borderRadius: 22, padding: "8px 14px", background: "rgba(255,255,255,0.09)", border: "0.5px solid rgba(255,255,255,0.18)" }}
                     >
                       {/* Annuler */}
                       <motion.button type="button" whileTap={{ scale: 0.88 }}
@@ -2002,13 +2082,11 @@ export function PostDetail() {
                             </motion.div>
                             <span style={{ fontSize: 13, color: "rgba(255,255,255,0.40)" }}>Envoi…</span>
                           </div>
-                        ) : voiceState === "armed" ? (
-                          <span style={{ fontSize: 13, color: "rgba(255,255,255,0.35)" }}>Maintiens pour enregistrer…</span>
                         ) : (
                           <div style={{ display: "flex", alignItems: "center", gap: 3, height: 24 }}>
                             {Array.from({ length: 20 }).map((_, i) => (
                               <motion.div key={i}
-                                style={{ width: 3, borderRadius: 2, background: "rgba(248,113,113,0.65)" }}
+                                style={{ width: 3, borderRadius: 2, background: "rgba(30,30,40,0.70)" }}
                                 animate={{ height: [4, 4 + Math.random() * 18, 4] }}
                                 transition={{ duration: 0.7, repeat: Infinity, delay: i * 0.07, ease: "easeInOut" }}
                               />
@@ -2017,15 +2095,15 @@ export function PostDetail() {
                         )}
                       </div>
 
-                      {/* Timer + mic pulsant */}
+                      {/* Timer + bouton envoyer */}
                       {voiceState === "recording" && (
                         <>
                           <VoiceTimer startTime={voiceStartRef.current} />
-                          <motion.div animate={{ scale: [1, 1.1, 1] }} transition={{ duration: 1.2, repeat: Infinity }}
-                            style={{ width: 30, height: 30, borderRadius: "50%", background: "#ef4444", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+                          <motion.button type="button" whileTap={{ scale: 0.88 }} onClick={handleMicSend}
+                            style={{ width: 30, height: 30, borderRadius: "50%", background: "#6366f1", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
                           >
-                            <Mic style={{ width: 13, height: 13, color: "#fff" }} />
-                          </motion.div>
+                            <Send style={{ width: 13, height: 13, color: "#fff" }} />
+                          </motion.button>
                         </>
                       )}
                     </motion.div>
@@ -2066,16 +2144,16 @@ export function PostDetail() {
                       </div>
 
                       {/* Micro — à droite de l'encadré */}
-                      <motion.button type="button" whileTap={{ scale: 0.88 }} onPointerDown={handleMicPointerDown}
+                      <motion.button type="button" whileTap={{ scale: 0.88 }} onClick={handleMicClick}
                         style={{
-                          width: 38, height: 38, borderRadius: "50%", flexShrink: 0,
-                          background: "rgba(99,102,241,0.08)", border: "0.5px solid rgba(99,102,241,0.28)",
+                          height: 46, width: 46, borderRadius: 22, flexShrink: 0,
+                          background: "rgba(255,255,255,0.07)", border: "0.5px solid rgba(255,255,255,0.18)",
                           display: "flex", alignItems: "center", justifyContent: "center",
-                          cursor: myUserId ? "pointer" : "not-allowed", touchAction: "none", userSelect: "none",
+                          cursor: myUserId ? "pointer" : "not-allowed",
                           alignSelf: "flex-end",
                         }}
                       >
-                        <Mic style={{ width: 16, height: 16, color: "rgba(99,102,241,0.75)" }} />
+                        <Mic style={{ width: 18, height: 18, color: "rgba(255,255,255,0.65)" }} />
                       </motion.button>
                     </motion.div>
                   )}
@@ -2085,10 +2163,6 @@ export function PostDetail() {
 
             {/* ── Formatting toolbar (toujours visible en mode commentaires : layout stable) ── */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 16px 14px" }}>
-              {/* Emoji */}
-              <motion.button whileTap={{ scale: 0.82 }} onClick={() => setShowEmojiPicker((v) => !v)} style={{ background: "none", border: "none", cursor: "pointer", padding: "6px", display: "flex" }}>
-                <Smile style={{ width: 22, height: 22, color: showEmojiPicker ? "#818cf8" : "rgba(99,102,241,0.75)", strokeWidth: 1.8 }} />
-              </motion.button>
               {/* GIF */}
               <motion.button whileTap={{ scale: 0.82 }} onClick={() => setGifOpen(true)} style={{ background: gifOpen ? "rgba(99,102,241,0.20)" : "none", border: gifOpen ? "0.5px solid rgba(99,102,241,0.40)" : "none", borderRadius: 8, cursor: "pointer", padding: "6px 8px", display: "flex", transition: "all 0.18s" }}>
                 <span style={{ fontSize: 13, fontWeight: 800, color: gifOpen ? "#818cf8" : "rgba(99,102,241,0.75)", fontFamily: "monospace", letterSpacing: "0.04em" }}>GIF</span>
@@ -2110,6 +2184,7 @@ export function PostDetail() {
                 <Bookmark style={{ width: 22, height: 22, color: isSaved ? "#818cf8" : "rgba(99,102,241,0.75)", fill: isSaved ? "#818cf8" : "none", strokeWidth: isSaved ? 2 : 1.8 }} />
               </motion.button>
             </div>
+            </div>{/* end maxWidth wrapper */}
           </motion.div>
         )}
       </div>

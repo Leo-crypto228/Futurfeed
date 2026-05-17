@@ -86,16 +86,15 @@ async function fetchToggleFollow(
 // ── Provider ──────────────────────────────────────────────────────────────────
 
 export function FollowProvider({ children }: { children: React.ReactNode }) {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const currentUserId = user?.username ?? "";
 
   const [followed, setFollowed] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const prevUserIdRef = useRef<string>("");
 
-  // Recharger les follows quand l'utilisateur connecté change
   useEffect(() => {
-    // Si le userId est vide ou identique au précédent, ne rien faire
+    if (authLoading) return; // Keep loading=true until auth resolves
     if (!currentUserId) {
       setFollowed(new Set());
       setLoading(false);
@@ -113,7 +112,7 @@ export function FollowProvider({ children }: { children: React.ReactNode }) {
         console.error("FollowContext: chargement follows échoué:", err);
       })
       .finally(() => setLoading(false));
-  }, [currentUserId]);
+  }, [currentUserId, authLoading]);
 
   const isFollowing = useCallback(
     (username: string) => followed.has(username),
