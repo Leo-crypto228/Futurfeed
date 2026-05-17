@@ -100,7 +100,7 @@ export function ProgressionProvider({ children }: { children: ReactNode }) {
   const addNewFcoins = useCallback((ids: string[]) => {
     if (ids.length > 0) {
       setNewFcoinNotification(ids[ids.length - 1]);
-      setState((prev) => prev ? { ...prev, fcoins: [...new Set([...prev.fcoins, ...ids])] } : prev);
+      setState((prev) => prev ? { ...prev, fcoins: [...new Set([...(prev.fcoins ?? []), ...ids])] } : prev);
     }
   }, []);
 

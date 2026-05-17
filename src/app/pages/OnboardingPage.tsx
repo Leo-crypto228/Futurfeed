@@ -233,6 +233,7 @@ const INPUT_STYLE: React.CSSProperties = {
 export function OnboardingPage() {
   const { user, updateLocalUser } = useAuth();
   const navigate = useNavigate();
+  const username = user?.username || "";
 
   // Vérification directe côté serveur au montage : si le compte a des posts ou onboardingDone,
   // on le sort immédiatement sans attendre le refresh AuthContext.
@@ -276,7 +277,6 @@ export function OnboardingPage() {
   const [createdGoalId,   setCreatedGoalId]   = useState<string | null>(null);
 
   const currentStep = STEPS[stepIdx];
-  const username    = user?.username || "";
 
   // ── Chargement des vrais profils et communautés depuis Supabase ──────────────
   useEffect(() => {
