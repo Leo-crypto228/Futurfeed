@@ -50,6 +50,7 @@ export function Layout() {
   const [createPostOpen, setCreatePostOpen] = useState(false);
   const { unreadCount } = useNotifications();
 
+
   // Show "+" button only on /tribes/:id (a specific community page)
   const communityMatch = location.pathname.match(/^\/tribes\/([^\/]+)$/);
   const isInCommunity = !!(communityMatch && communityMatch[1] !== "create");
@@ -114,7 +115,7 @@ export function Layout() {
       />
       <FcoinNotificationWatcher />
       <main
-        className="flex-1 overflow-y-auto overflow-x-hidden"
+        className={`flex-1 overflow-y-auto overflow-x-hidden${hideNav ? "" : " fw-main"}`}
         style={{ paddingBottom: hideNav ? 0 : "calc(68px + env(safe-area-inset-bottom, 0px))" }}
       >
         <Suspense fallback={
@@ -126,94 +127,68 @@ export function Layout() {
         </Suspense>
       </main>
 
-      {/* ── BOTTOM NAV ─────────────────────────────────────────────── */}
-      
-        {!hideNav && (
-          <motion.nav
-            style={{
-              position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 50,
-              background: "#000",
-              borderTop: "0.5px solid rgba(255,255,255,0.10)",
-              display: "flex", justifyContent: "center",
-              paddingBottom: "env(safe-area-inset-bottom, 16px)",
-            }}
-            initial={{ y: 80, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            transition={{ type: "spring", stiffness: 380, damping: 36 }}
-          >
-            {/* Inner row — calée sur la largeur des posts (max-w-2xl) */}
-            <div style={{ width: "100%", maxWidth: 672, display: "flex", alignItems: "center" }}>
+      {/* ── NAV ────────────────────────────────────────────────────── */}
+      {!hideNav && (
+        <motion.nav
+          className="fw-nav fixed z-[50] flex bg-black bottom-0 left-0 right-0 justify-center lg:right-auto lg:top-0 lg:bottom-0 lg:w-[72px] lg:flex-col lg:justify-center"
+          style={{
+            borderTop: "0.5px solid rgba(255,255,255,0.10)",
+            paddingBottom: "env(safe-area-inset-bottom, 16px)",
+          }}
+          initial={{ y: 80, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ type: "spring", stiffness: 380, damping: 36 }}
+        >
+          <div className="w-full max-w-[672px] flex items-center lg:flex-col lg:max-w-none">
 
-              {/* Home */}
-              <Link to="/" style={{ flex: 1, display: "flex", justifyContent: "center", alignItems: "center", height: 60, textDecoration: "none" }}>
-                <motion.div whileTap={{ scale: 0.82 }}>
-                  <Home style={{ width: 25, height: 25, color: isActive("/") ? "#fff" : "rgba(255,255,255,0.38)", strokeWidth: isActive("/") ? 2.2 : 1.7, transition: "color 0.18s" }} />
+            <Link to="/" className="flex-1 h-[60px] flex justify-center items-center lg:flex-none lg:h-[56px] lg:w-full" style={{ textDecoration: "none" }}>
+              <motion.div whileTap={{ scale: 0.82 }}>
+                <Home style={{ width: 25, height: 25, color: isActive("/") ? "#fff" : "rgba(255,255,255,0.38)", strokeWidth: isActive("/") ? 2.2 : 1.7, transition: "color 0.18s" }} />
+              </motion.div>
+            </Link>
+
+            <Link to="/tribes" className="flex-1 h-[60px] flex justify-center items-center lg:flex-none lg:h-[56px] lg:w-full" style={{ textDecoration: "none" }}>
+              <motion.div whileTap={{ scale: 0.82 }}>
+                <Users style={{ width: 25, height: 25, color: isActive("/tribes") ? "#fff" : "rgba(255,255,255,0.38)", strokeWidth: isActive("/tribes") ? 2.2 : 1.7, transition: "color 0.18s" }} />
+              </motion.div>
+            </Link>
+
+            <div className="flex-[1.4] h-[60px] flex justify-center items-center lg:flex-none lg:h-[56px] lg:w-full">
+              <Link to="/create" style={{ textDecoration: "none" }} onClick={() => navigator.vibrate?.(12)}>
+                <motion.div
+                  className="fw-nav-create-btn"
+                  whileTap={{ scale: 0.90 }}
+                  transition={{ type: "spring", stiffness: 500, damping: 28 }}
+                  style={{ height: 38, paddingLeft: 22, paddingRight: 22, borderRadius: 999, background: "#4f46e5", display: "flex", alignItems: "center", justifyContent: "center" }}
+                >
+                  <Plus style={{ width: 22, height: 22, color: "#fff", strokeWidth: 2.4 }} />
                 </motion.div>
               </Link>
+            </div>
 
-              {/* Tribes */}
-              <Link to="/tribes" style={{ flex: 1, display: "flex", justifyContent: "center", alignItems: "center", height: 60, textDecoration: "none" }}>
-                <motion.div whileTap={{ scale: 0.82 }}>
-                  <Users style={{ width: 25, height: 25, color: isActive("/tribes") ? "#fff" : "rgba(255,255,255,0.38)", strokeWidth: isActive("/tribes") ? 2.2 : 1.7, transition: "color 0.18s" }} />
-                </motion.div>
-              </Link>
-
-              {/* ── Centre : bouton Créer — boudin violet dans la barre ── */}
-              <div style={{ flex: 1.4, display: "flex", justifyContent: "center", alignItems: "center", height: 60 }}>
-                <Link to="/create" style={{ textDecoration: "none" }} onClick={() => navigator.vibrate?.(12)}>
-                  <motion.div
-                    whileTap={{ scale: 0.90 }}
-                    transition={{ type: "spring", stiffness: 500, damping: 28 }}
-                    style={{
-                      height: 38, paddingLeft: 22, paddingRight: 22,
-                      borderRadius: 999,
-                      background: "#4f46e5",
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                    }}
+            <Link to="/notifications" className="flex-1 h-[60px] flex justify-center items-center lg:flex-none lg:h-[56px] lg:w-full" style={{ textDecoration: "none" }}>
+              <motion.div whileTap={{ scale: 0.82 }} style={{ position: "relative" }}>
+                <Bell style={{ width: 25, height: 25, color: isActive("/notifications") ? "#fff" : "rgba(255,255,255,0.38)", strokeWidth: isActive("/notifications") ? 2.2 : 1.7, transition: "color 0.18s" }} />
+                {unreadCount > 0 && (
+                  <motion.div key="badge" initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 500, damping: 28 }}
+                    style={{ position: "absolute", top: -4, right: -6, minWidth: 16, height: 16, borderRadius: 999, background: "#fff", color: "#111", fontSize: 9, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 3px", lineHeight: 1, border: "1.5px solid #000" }}
                   >
-                    <Plus style={{ width: 22, height: 22, color: "#fff", strokeWidth: 2.4 }} />
+                    {unreadCount > 99 ? "99+" : unreadCount}
                   </motion.div>
-                </Link>
-              </div>
+                )}
+              </motion.div>
+            </Link>
 
-              {/* Notifications */}
-              <Link to="/notifications" style={{ flex: 1, display: "flex", justifyContent: "center", alignItems: "center", height: 60, textDecoration: "none" }}>
-                <motion.div whileTap={{ scale: 0.82 }} style={{ position: "relative" }}>
-                  <Bell style={{ width: 25, height: 25, color: isActive("/notifications") ? "#fff" : "rgba(255,255,255,0.38)", strokeWidth: isActive("/notifications") ? 2.2 : 1.7, transition: "color 0.18s" }} />
-                  
-                    {unreadCount > 0 && (
-                      <motion.div
-                        key="badge"
-                        initial={{ scale: 0 }} animate={{ scale: 1 }}
-                        transition={{ type: "spring", stiffness: 500, damping: 28 }}
-                        style={{
-                          position: "absolute", top: -4, right: -6,
-                          minWidth: 16, height: 16, borderRadius: 999,
-                          background: "#fff", color: "#111",
-                          fontSize: 9, fontWeight: 800,
-                          display: "flex", alignItems: "center", justifyContent: "center",
-                          padding: "0 3px", lineHeight: 1,
-                          border: "1.5px solid #000",
-                        }}
-                      >
-                        {unreadCount > 99 ? "99+" : unreadCount}
-                      </motion.div>
-                    )}
-                  
-                </motion.div>
-              </Link>
+            <Link to="/profile" className="flex-1 h-[60px] flex justify-center items-center lg:flex-none lg:h-[56px] lg:w-full" style={{ textDecoration: "none" }}>
+              <motion.div whileTap={{ scale: 0.82 }}>
+                <Target style={{ width: 25, height: 25, color: isActive("/profile") ? "#fff" : "rgba(255,255,255,0.38)", strokeWidth: isActive("/profile") ? 2.2 : 1.7, transition: "color 0.18s" }} />
+              </motion.div>
+            </Link>
 
-              {/* Profile */}
-              <Link to="/profile" style={{ flex: 1, display: "flex", justifyContent: "center", alignItems: "center", height: 60, textDecoration: "none" }}>
-                <motion.div whileTap={{ scale: 0.82 }}>
-                  <Target style={{ width: 25, height: 25, color: isActive("/profile") ? "#fff" : "rgba(255,255,255,0.38)", strokeWidth: isActive("/profile") ? 2.2 : 1.7, transition: "color 0.18s" }} />
-                </motion.div>
-              </Link>
+          </div>
+        </motion.nav>
+      )}
 
-            </div>{/* end inner row */}
-          </motion.nav>
-        )}
-      
     </div>
   );
 }
