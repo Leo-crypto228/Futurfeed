@@ -51,22 +51,7 @@ export function CommunitySubscribeButton({
     lg: { padding: "10px 24px", fontSize: 15, height: 44, gap: 7, iconSize: 16 },
   }[size];
 
-  // Pendant le chargement du context, on affiche un état neutre pour éviter le flash "S'abonner"
-  if (contextLoading && !member) {
-    return (
-      <div style={{
-        display: "inline-flex", alignItems: "center", justifyContent: "center",
-        height: sizeStyles.height, width: 90, borderRadius: 999,
-        background: "rgba(255,255,255,0.07)", border: "0.5px solid rgba(255,255,255,0.12)",
-      }}>
-        <motion.div
-          animate={{ rotate: 360 }}
-          transition={{ duration: 0.8, repeat: Infinity, ease: "linear" }}
-          style={{ width: 14, height: 14, border: "2px solid rgba(255,255,255,0.15)", borderTopColor: "rgba(255,255,255,0.55)", borderRadius: "50%" }}
-        />
-      </div>
-    );
-  }
+  if (contextLoading) return null;
 
   return (
     <motion.button

@@ -68,25 +68,7 @@ export function FollowButton({
     }
   };
 
-  // Pendant le chargement du context, éviter le flash "+ Foradd" avant de savoir si déjà suivi
-  if (contextLoading && !following) {
-    return (
-      <div style={{
-        display: "inline-flex", alignItems: "center", justifyContent: "center",
-        padding: pad, borderRadius: 999,
-        background: "rgba(255,255,255,0.07)", border: "0.5px solid rgba(255,255,255,0.12)",
-        height: size === "lg" ? 34 : size === "md" ? 28 : 24,
-        minWidth: 70,
-        ...style,
-      }}>
-        <motion.div
-          animate={{ rotate: 360 }}
-          transition={{ duration: 0.8, repeat: Infinity, ease: "linear" }}
-          style={{ width: iconSz, height: iconSz, border: "2px solid rgba(255,255,255,0.15)", borderTopColor: "rgba(255,255,255,0.55)", borderRadius: "50%" }}
-        />
-      </div>
-    );
-  }
+  if (contextLoading) return null;
 
   // ── État : NON SUIVI ──────────────────────────────────────────────────────
   if (!following) {

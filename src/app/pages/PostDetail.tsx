@@ -1122,10 +1122,12 @@ export function PostDetail() {
   const handleMicPointerDown = useCallback((e: React.PointerEvent) => {
     e.preventDefault();
     if (!myUserId || voiceStateRef.current !== "idle") return;
+    (e.currentTarget as Element).setPointerCapture(e.pointerId);
     const _userId = myUserId, _userName = myUserName, _avatar = myUserAvatar, _postId = postId;
     setVS("armed");
-    const handleUp = () => {
-      document.removeEventListener("pointerup", handleUp);
+    const handleRelease = () => {
+      document.removeEventListener("pointerup", handleRelease);
+      document.removeEventListener("pointercancel", handleRelease);
       const cur = voiceStateRef.current;
       if (cur === "armed") {
         if (voiceArmRef.current) { clearTimeout(voiceArmRef.current); voiceArmRef.current = null; }
@@ -1170,7 +1172,8 @@ export function PostDetail() {
         rec.stop();
       }
     };
-    document.addEventListener("pointerup", handleUp);
+    document.addEventListener("pointerup", handleRelease);
+    document.addEventListener("pointercancel", handleRelease);
     voiceArmRef.current = setTimeout(async () => {
       voiceArmRef.current = null;
       try {
@@ -1186,7 +1189,7 @@ export function PostDetail() {
         rec.ondataavailable = (ev) => { if (ev.data.size > 0) voiceChunks.current.push(ev.data); };
         rec.start(100); voiceRecRef.current = rec; voiceStartRef.current = Date.now();
         setVS("recording"); navigator.vibrate?.(25);
-      } catch { setVS("idle"); document.removeEventListener("pointerup", handleUp); }
+      } catch { setVS("idle"); document.removeEventListener("pointerup", handleRelease); document.removeEventListener("pointercancel", handleRelease); }
     }, 1500);
   }, [myUserId, myUserName, myUserAvatar, postId, setVS]);
 
@@ -1554,7 +1557,7 @@ export function PostDetail() {
       </div>
 
       {/* ── Scrollable content ── */}
-      <div ref={listRef} style={{ flex: 1, overflowY: "auto", paddingBottom: 150 }}>
+      <div ref={listRef} style={{ flex: 1, overflowY: "auto" }}>
         <div style={{ maxWidth: 640, margin: "0 auto", padding: "0 12px" }}>
 
           {/* ── Post card ── */}
@@ -1894,14 +1897,11 @@ export function PostDetail() {
             
           </div>
         </div>
-      </div>
-
-      {/* ── Sticky bottom comment bar (only in comments view) ── */}
-      
+      {/* ── Comment composer (inside scroll) ── */}
         {(view === "comments") && (
           <motion.div
             initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: 0.2 }}
-            style={{ position: "sticky", bottom: 0, zIndex: 40, background: "#000000", borderTop: "0.5px solid rgba(255,255,255,0.07)", paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
+            style={{ background: "#000000", borderTop: "0.5px solid rgba(255,255,255,0.07)", paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
           >
             {/* ── Comment type pills row (toujours visible en mode commentaires : layout stable, pas de croissance au focus) ── */}
             <div style={{ display: "flex", gap: 8, padding: "10px 14px 0", overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
@@ -1927,14 +1927,6 @@ export function PostDetail() {
               {hasCommentAutocomplete && (
                 <div className="fixed inset-0 z-40" onClick={() => setShowCommentAutocomplete(false)} />
               )}
-
-              <div style={{ width: 32, height: 32, borderRadius: "50%", overflow: "hidden", flexShrink: 0, border: "1.5px solid rgba(99,102,241,0.25)", background: "linear-gradient(135deg,#4f46e5,#a78bfa)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                {myUserAvatar ? (
-                  <img src={myUserAvatar} alt="Moi" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                ) : (
-                  <span style={{ fontSize: 12, fontWeight: 700, color: "#fff" }}>{myUserName.slice(0, 2).toUpperCase()}</span>
-                )}
-              </div>
 
               <div style={{ flex: 1, position: "relative" }}>
                 {/* Autocomplete dropdown */}
@@ -2044,19 +2036,6 @@ export function PostDetail() {
                       transition={{ duration: 0.13 }}
                       style={{ display: "flex", alignItems: "flex-end", gap: 8 }}
                     >
-                      {/* Micro — à gauche de l'encadré */}
-                      <motion.div whileTap={{ scale: 0.88 }} onPointerDown={handleMicPointerDown}
-                        style={{
-                          width: 38, height: 38, borderRadius: "50%", flexShrink: 0,
-                          background: "rgba(99,102,241,0.08)", border: "0.5px solid rgba(99,102,241,0.28)",
-                          display: "flex", alignItems: "center", justifyContent: "center",
-                          cursor: myUserId ? "pointer" : "not-allowed", touchAction: "none", userSelect: "none",
-                          alignSelf: "flex-end",
-                        }}
-                      >
-                        <Mic style={{ width: 16, height: 16, color: "rgba(99,102,241,0.75)" }} />
-                      </motion.div>
-
                       {/* Encadré texte */}
                       <div style={{ flex: 1, display: "flex", alignItems: "flex-end", gap: 10, minHeight: 46, borderRadius: 22, padding: "8px 14px", background: boldMode ? "rgba(99,102,241,0.12)" : "rgba(255,255,255,0.07)", border: boldMode ? "0.5px solid rgba(99,102,241,0.45)" : "0.5px solid rgba(99,102,241,0.28)", transition: "all 0.2s" }}>
                         <HighlightInput
@@ -2085,6 +2064,19 @@ export function PostDetail() {
                           )}
                         </motion.button>
                       </div>
+
+                      {/* Micro — à droite de l'encadré */}
+                      <motion.button type="button" whileTap={{ scale: 0.88 }} onPointerDown={handleMicPointerDown}
+                        style={{
+                          width: 38, height: 38, borderRadius: "50%", flexShrink: 0,
+                          background: "rgba(99,102,241,0.08)", border: "0.5px solid rgba(99,102,241,0.28)",
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          cursor: myUserId ? "pointer" : "not-allowed", touchAction: "none", userSelect: "none",
+                          alignSelf: "flex-end",
+                        }}
+                      >
+                        <Mic style={{ width: 16, height: 16, color: "rgba(99,102,241,0.75)" }} />
+                      </motion.button>
                     </motion.div>
                   )}
                 </AnimatePresence>
@@ -2120,7 +2112,7 @@ export function PostDetail() {
             </div>
           </motion.div>
         )}
-      
+      </div>
 
       {/* ── Modals ── */}
       
