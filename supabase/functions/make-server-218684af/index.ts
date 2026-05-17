@@ -30,6 +30,7 @@ try {
 const PROFILE_BUCKET  = "make-218684af-profile-images";
 const POST_IMG_BUCKET = "make-218684af-post-images";
 const COMMUNITY_IMG_BUCKET = "make-218684af-community-images";
+const VOICE_BUCKET = "make-218684af-voice-msgs";
 
 // Idempotent bucket creation (public so URLs never expire)
 (async () => {
@@ -47,6 +48,10 @@ const COMMUNITY_IMG_BUCKET = "make-218684af-community-images";
     if (!names.includes(COMMUNITY_IMG_BUCKET)) {
       await supabaseAdmin.storage.createBucket(COMMUNITY_IMG_BUCKET, { public: true });
       console.log(`Bucket ${COMMUNITY_IMG_BUCKET} créé.`);
+    }
+    if (!names.includes(VOICE_BUCKET)) {
+      await supabaseAdmin.storage.createBucket(VOICE_BUCKET, { public: true });
+      console.log(`Bucket ${VOICE_BUCKET} créé.`);
     }
   } catch (err) {
     console.error("Erreur init bucket:", err);
@@ -365,6 +370,11 @@ function safeFileName(mime: string): string {
   return `${rand}.${ext}`;
 }
 
+function safeAudioFileName(mime: string): string {
+  const ext = (mime.includes("mp4") || mime.includes("m4a") || mime.includes("aac")) ? "m4a" : "webm";
+  return `${crypto.randomUUID().replace(/-/g, "")}.${ext}`;
+}
+
 /** Validation complète : taille, extension autorisée, MIME bytes réels. */
 async function validateUpload(file: File): Promise<
   { ok: true; bytes: Uint8Array; mime: string } | { ok: false; error: string }
@@ -457,6 +467,42 @@ app.post("/make-server-218684af/upload-community-image", async (c) => {
     return c.json({ success: true, url: urlData.publicUrl });
   } catch (err) {
     console.error("Erreur upload-community-image:", err);
+    return c.json({ error: `Échec upload: ${err}` }, 500);
+  }
+});
+
+// ── Upload message vocal → Supabase Storage (public bucket) ─────────────────
+app.post("/make-server-218684af/upload-voice", async (c) => {
+  try {
+    const body = await c.req.parseBody();
+    const file = body["file"];
+    if (!file || typeof file === "string") {
+      return c.json({ error: "Fichier audio requis (champ 'file')" }, 400);
+    }
+    const f = file as File;
+    if (f.size === 0) return c.json({ error: "Fichier vide." }, 400);
+    if (f.size > 10 * 1024 * 1024) {
+      return c.json({ error: "Fichier trop volumineux (max 10 MB)." }, 400);
+    }
+    const mime = f.type || "audio/webm";
+    const allowed = ["audio/webm", "audio/mp4", "audio/m4a", "audio/aac", "audio/ogg", "video/webm"];
+    if (!allowed.some((a) => mime.startsWith(a.split(";")[0]))) {
+      return c.json({ error: `Format audio non supporté: ${mime}` }, 400);
+    }
+    const bytes = new Uint8Array(await f.arrayBuffer());
+    const fileName = safeAudioFileName(mime);
+    const { error: upErr } = await supabaseAdmin.storage
+      .from(VOICE_BUCKET)
+      .upload(fileName, bytes, { contentType: mime, upsert: false });
+    if (upErr) {
+      console.error("Erreur upload audio:", upErr);
+      return c.json({ error: `Erreur upload: ${upErr.message}` }, 500);
+    }
+    const { data: urlData } = supabaseAdmin.storage.from(VOICE_BUCKET).getPublicUrl(fileName);
+    console.log(`Message vocal uploadé: ${fileName} (${mime}), url=${urlData.publicUrl}`);
+    return c.json({ success: true, url: urlData.publicUrl });
+  } catch (err) {
+    console.error("Erreur upload-voice:", err);
     return c.json({ error: `Échec upload: ${err}` }, 500);
   }
 });
@@ -5376,10 +5422,10 @@ app.post("/make-server-218684af/community/:communityId/messages", async (c) => {
   try {
     const communityId = c.req.param("communityId");
     const body = await c.req.json();
-    const { userId, author, handle, avatar, content, parentId, image, sharedPostId, sharedPostSnapshot } = body;
+    const { userId, author, handle, avatar, content, parentId, image, sharedPostId, sharedPostSnapshot, voiceUrl, voiceDuration } = body;
 
-    if (!userId)          return c.json({ error: "userId requis." }, 400);
-    if (!content?.trim()) return c.json({ error: "content requis." }, 400);
+    if (!userId) return c.json({ error: "userId requis." }, 400);
+    if (!content?.trim() && !voiceUrl) return c.json({ error: "content ou voiceUrl requis." }, 400);
 
     const id = genId();
     const createdAt = new Date().toISOString();
@@ -5392,10 +5438,12 @@ app.post("/make-server-218684af/community/:communityId/messages", async (c) => {
       author: author || userId,
       handle: handle || `@${userId}`,
       avatar: avatar || "",
-      content: content.trim(),
+      content: content?.trim() || "",
       image: image || null,
       sharedPostId: sharedPostId || null,
       sharedPostSnapshot: sharedPostSnapshot || null,
+      voiceUrl: voiceUrl || null,
+      voiceDuration: voiceDuration || null,
       createdAt,
       timestamp: "À l'instant",
     };
