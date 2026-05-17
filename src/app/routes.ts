@@ -1,6 +1,7 @@
 import { createBrowserRouter } from "react-router";
 import { lazy } from "react";
 import { Layout } from "./components/Layout";
+import { RootError } from "./components/RootError";
 
 // Auth pages — eager (small forms, entry points for unauthenticated users)
 import { LoginPage } from "./pages/LoginPage";
@@ -57,6 +58,7 @@ export const router = createBrowserRouter([
   {
     path: "/",
     Component: Layout,
+    ErrorBoundary: RootError,
     children: [
       { index: true,                Component: Feed },
       { path: "profile",            Component: Profile },
