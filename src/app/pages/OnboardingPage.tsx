@@ -234,7 +234,23 @@ export function OnboardingPage() {
   const { user, updateLocalUser } = useAuth();
   const navigate = useNavigate();
 
-  // Si le compte a déjà terminé l'onboarding (détecté après le refresh KV), sortir immédiatement.
+  // Vérification directe côté serveur au montage : si le compte a des posts ou onboardingDone,
+  // on le sort immédiatement sans attendre le refresh AuthContext.
+  useEffect(() => {
+    if (!username) return;
+    fetch(`${BASE}/profiles/${encodeURIComponent(username)}`, { headers: HEADERS })
+      .then((r) => r.json())
+      .then((data) => {
+        const p = data?.profile;
+        if (p && (p.onboardingDone || p.firstPostCreated || (p.postsCount ?? 0) > 0)) {
+          updateLocalUser({ onboardingDone: true, firstPostCreated: true });
+          navigate("/", { replace: true });
+        }
+      })
+      .catch(() => {});
+  }, [username]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sortie rapide si le cache AuthContext est déjà à jour
   useEffect(() => {
     if (user?.onboardingDone) navigate("/", { replace: true });
   }, [user?.onboardingDone, navigate]);
