@@ -124,11 +124,12 @@ export function LoginPage() {
   useEffect(() => {
     if (loading) return;
     if (user) {
-      if (!user.onboardingDone) {
+      const needsOnboarding = (() => { try { return localStorage.getItem("ff_needs_onboarding") === "1"; } catch { return false; } })();
+      if (!user.onboardingDone && needsOnboarding) {
         navigate("/onboarding", { replace: true });
         return;
       }
-      if (!user.firstPostCreated) {
+      if (!user.firstPostCreated && needsOnboarding) {
         navigate("/first-post", { replace: true });
         return;
       }
@@ -523,6 +524,7 @@ function SignupPanel({ onBack, onNavigate, initialEmail, initialPassword }: Sign
       setStep("sending");
       await new Promise((r) => setTimeout(r, 400));
 
+      try { localStorage.setItem("ff_needs_onboarding", "1"); } catch {}
       onNavigate("/verify-email", { email: initialEmail.trim(), mode: "signup" });
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Erreur inconnue";

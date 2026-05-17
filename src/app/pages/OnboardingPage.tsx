@@ -245,6 +245,7 @@ export function OnboardingPage() {
         const p = data?.profile;
         if (p && (p.onboardingDone || p.firstPostCreated || (p.postsCount ?? 0) > 0)) {
           updateLocalUser({ onboardingDone: true, firstPostCreated: true });
+          try { localStorage.removeItem("ff_needs_onboarding"); } catch {}
           navigate("/", { replace: true });
         }
       })
@@ -352,8 +353,9 @@ export function OnboardingPage() {
         await apiPost("/progression/checkin", { userId: username });
         // Mark onboarding as done
         await apiPut(`/profiles/${encodeURIComponent(username)}`, { onboardingDone: true });
-        // Update local state
+        // Update local state + clear signup flag
         updateLocalUser({ onboardingDone: true, objective: goalTitle.trim() });
+        try { localStorage.removeItem("ff_needs_onboarding"); } catch {}
         navigate("/", { replace: true });
         return;
       }

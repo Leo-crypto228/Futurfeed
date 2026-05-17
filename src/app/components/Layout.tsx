@@ -60,15 +60,19 @@ export function Layout() {
     if (!user) {
       const redirect = encodeURIComponent(location.pathname + location.search);
       navigate(`/login?redirect=${redirect}`, { replace: true });
-    } else if (!user.onboardingDone) {
-      navigate("/onboarding", { replace: true });
-    } else if (!user.firstPostCreated) {
-      navigate("/first-post", { replace: true });
+    } else {
+      const needsOnboarding = (() => { try { return localStorage.getItem("ff_needs_onboarding") === "1"; } catch { return false; } })();
+      if (!user.onboardingDone && needsOnboarding) {
+        navigate("/onboarding", { replace: true });
+      } else if (!user.firstPostCreated && needsOnboarding) {
+        navigate("/first-post", { replace: true });
+      }
     }
   }, [user, loading, navigate]);
 
   // Pendant le chargement initial
-  if (loading || !user || !user.onboardingDone || !user.firstPostCreated) {
+  const needsOnboarding = (() => { try { return localStorage.getItem("ff_needs_onboarding") === "1"; } catch { return false; } })();
+  if (loading || !user || (!user.onboardingDone && needsOnboarding) || (!user.firstPostCreated && needsOnboarding)) {
     return (
       <div style={{
         minHeight: "100dvh", background: "#050510",
