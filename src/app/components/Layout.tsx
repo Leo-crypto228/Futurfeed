@@ -139,7 +139,7 @@ export function Layout() {
           animate={{ y: 0, opacity: 1 }}
           transition={{ type: "spring", stiffness: 380, damping: 36 }}
         >
-          <div className="w-full max-w-[672px] flex items-center lg:flex-col lg:max-w-none lg:gap-2">
+          <div className="w-full max-w-[672px] flex items-center lg:flex-col lg:max-w-none lg:gap-4">
 
             <Link to="/" className="flex-1 h-[60px] flex justify-center items-center lg:flex-none lg:h-[56px] lg:w-full" style={{ textDecoration: "none" }}>
               <motion.div whileTap={{ scale: 0.82 }}>

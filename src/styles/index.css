@@ -21,7 +21,11 @@
   .fw-nav-create-btn {
     padding-left: 0 !important;
     padding-right: 0 !important;
-    width: 38px !important;
-    height: 38px !important;
+    width: 48px !important;
+    height: 48px !important;
+  }
+  .fw-nav svg {
+    width: 31px !important;
+    height: 31px !important;
   }
 }
