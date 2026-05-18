@@ -17,6 +17,7 @@
     border-top: none !important;
     border-right: 0.5px solid rgba(255,255,255,0.10) !important;
     padding-bottom: 0 !important;
+    top: env(safe-area-inset-top) !important;
   }
   .fw-nav-create-btn {
     padding-left: 0 !important;
