@@ -636,7 +636,7 @@ export function Feed() {
       <motion.div
         ref={headerRef}
         className="fixed left-0 right-0 z-10 bg-background/95 backdrop-blur-xl border-b border-border/50"
-        style={{ top: 0 }}
+        style={{ top: "env(safe-area-inset-top)" }}
         animate={{ y: headerVisible ? 0 : -(headerH || 165) }}
         transition={{ type: "spring", stiffness: 420, damping: 38, mass: 0.8 }}
       >

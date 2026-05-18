@@ -116,7 +116,7 @@ export function Layout() {
       <FcoinNotificationWatcher />
       <main
         className={`flex-1 overflow-y-auto overflow-x-hidden${hideNav ? "" : " fw-main"}`}
-        style={{ paddingBottom: hideNav ? 0 : "calc(68px + env(safe-area-inset-bottom, 0px))" }}
+        style={{ paddingBottom: hideNav ? 0 : "calc(64px + env(safe-area-inset-bottom, 0px) / 2)" }}
       >
         <Suspense fallback={
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "60vh" }}>
@@ -133,7 +133,7 @@ export function Layout() {
           className="fw-nav fixed z-[50] flex bg-black bottom-0 left-0 right-0 justify-center lg:right-auto lg:top-0 lg:bottom-0 lg:w-[72px] lg:flex-col lg:justify-center"
           style={{
             borderTop: "0.5px solid rgba(255,255,255,0.10)",
-            paddingBottom: "env(safe-area-inset-bottom, 16px)",
+            paddingBottom: "calc(env(safe-area-inset-bottom, 0px) / 2 + 4px)",
           }}
           initial={{ y: 80, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
