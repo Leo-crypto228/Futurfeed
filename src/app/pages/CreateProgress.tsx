@@ -250,8 +250,7 @@ export function CreateProgress() {
     }
   }, [setVoiceModeBoth, clearVoiceTimers, resetVoice]);
 
-  const handleMicPointerDown = useCallback((e: React.PointerEvent) => {
-    e.preventDefault();
+  const startHold = useCallback(() => {
     if (voiceModeRef.current !== "idle") return;
     setVoiceModeBoth("holding");
     navigator.vibrate?.(8);
@@ -260,7 +259,7 @@ export function CreateProgress() {
     }, HOLD_DURATION_MS);
   }, [startRecording, setVoiceModeBoth]);
 
-  const handleMicPointerUp = useCallback(() => {
+  const endHold = useCallback(() => {
     const mode = voiceModeRef.current;
     if (mode === "holding") {
       if (holdTimeoutRef.current) { clearTimeout(holdTimeoutRef.current); holdTimeoutRef.current = null; }
@@ -270,6 +269,26 @@ export function CreateProgress() {
       if (r && r.state !== "inactive") r.stop();
     }
   }, [setVoiceModeBoth]);
+
+  // Touch handlers (iOS: preventDefault bloque le menu long-press natif)
+  const handleMicTouchStart = useCallback((e: React.TouchEvent) => {
+    e.preventDefault();
+    startHold();
+  }, [startHold]);
+
+  const handleMicTouchEnd = useCallback((e: React.TouchEvent) => {
+    e.preventDefault();
+    endHold();
+  }, [endHold]);
+
+  // Mouse handlers (desktop fallback — ignorés sur mobile car touch est prioritaire)
+  const handleMicMouseDown = useCallback((_e: React.MouseEvent) => {
+    startHold();
+  }, [startHold]);
+
+  const handleMicMouseUp = useCallback(() => {
+    endHold();
+  }, [endHold]);
 
   // Cleanup au unmount
   useEffect(() => {
@@ -797,10 +816,12 @@ export function CreateProgress() {
             {/* Mic (press-hold 1.5s) */}
             <motion.button
               type="button"
-              onPointerDown={handleMicPointerDown}
-              onPointerUp={handleMicPointerUp}
-              onPointerCancel={handleMicPointerUp}
-              onPointerLeave={handleMicPointerUp}
+              onTouchStart={handleMicTouchStart}
+              onTouchEnd={handleMicTouchEnd}
+              onTouchCancel={handleMicTouchEnd}
+              onMouseDown={handleMicMouseDown}
+              onMouseUp={handleMicMouseUp}
+              onMouseLeave={handleMicMouseUp}
               onContextMenu={(e) => e.preventDefault()}
               disabled={images.length > 0 || (voiceMode === "preview")}
               animate={{
@@ -826,6 +847,8 @@ export function CreateProgress() {
                 flexShrink: 0,
                 touchAction: "none",
                 userSelect: "none",
+                WebkitUserSelect: "none",
+                WebkitTouchCallout: "none" as any,
               }}>
               <Mic style={{ width: 17, height: 17, color: voiceMode === "recording" ? "#f87171" : voiceMode === "holding" ? "#a5b4fc" : "rgba(255,255,255,0.65)" }} />
             </motion.button>
