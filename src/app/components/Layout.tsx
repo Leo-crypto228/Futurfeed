@@ -63,18 +63,13 @@ export function Layout() {
       const redirect = encodeURIComponent(location.pathname + location.search);
       navigate(`/login?redirect=${redirect}`, { replace: true });
     } else {
-      const needsOnboarding = (() => { try { return localStorage.getItem("ff_needs_onboarding") === "1"; } catch { return false; } })();
-      if (!user.onboardingDone && needsOnboarding) {
-        navigate("/onboarding", { replace: true });
-      } else if (!user.firstPostCreated && needsOnboarding) {
-        navigate("/first-post", { replace: true });
-      }
+      // Comptes existants : on nettoie definitivement le flag d'onboarding
+      try { localStorage.removeItem("ff_needs_onboarding"); } catch {}
     }
   }, [user, loading, navigate]);
 
   // Pendant le chargement initial
-  const needsOnboarding = (() => { try { return localStorage.getItem("ff_needs_onboarding") === "1"; } catch { return false; } })();
-  if (loading || !user || (!user.onboardingDone && needsOnboarding) || (!user.firstPostCreated && needsOnboarding)) {
+  if (loading || !user) {
     return (
       <div style={{
         minHeight: "100dvh", background: "#050510",

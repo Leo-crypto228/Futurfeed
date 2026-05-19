@@ -124,15 +124,8 @@ export function LoginPage() {
   useEffect(() => {
     if (loading) return;
     if (user) {
-      const needsOnboarding = (() => { try { return localStorage.getItem("ff_needs_onboarding") === "1"; } catch { return false; } })();
-      if (!user.onboardingDone && needsOnboarding) {
-        navigate("/onboarding", { replace: true });
-        return;
-      }
-      if (!user.firstPostCreated && needsOnboarding) {
-        navigate("/first-post", { replace: true });
-        return;
-      }
+      // Compte existant qui se reconnecte : on nettoie le flag d'onboarding
+      try { localStorage.removeItem("ff_needs_onboarding"); } catch {}
       const stored = sessionStorage.getItem("ff_redirect_after_auth");
       if (stored && stored !== "/") {
         sessionStorage.removeItem("ff_redirect_after_auth");

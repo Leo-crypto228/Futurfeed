@@ -37,11 +37,15 @@ export function VerifyEmailPage() {
       sessionStorage.removeItem("ff_verify_email");
       sessionStorage.removeItem("ff_verify_mode");
       const redirectAfterAuth = sessionStorage.getItem("ff_redirect_after_auth");
-      if (redirectAfterAuth && redirectAfterAuth !== "/" && user.onboardingDone) {
+      const isSignup = mode === "signup";
+      if (redirectAfterAuth && redirectAfterAuth !== "/") {
         sessionStorage.removeItem("ff_redirect_after_auth");
         navigate(redirectAfterAuth, { replace: true });
+      } else if (isSignup && !user.onboardingDone) {
+        navigate("/onboarding", { replace: true });
       } else {
-        navigate(user.onboardingDone ? "/" : "/onboarding", { replace: true });
+        try { localStorage.removeItem("ff_needs_onboarding"); } catch {}
+        navigate("/", { replace: true });
       }
     }
   }, [user, authLoading, navigate]);
