@@ -7,6 +7,15 @@
   to   { transform: rotate(360deg); }
 }
 
+/* Conteneur racine de l'app — ancré en haut à gauche, hauteur = window.innerHeight via JS */
+#root {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  overflow: hidden;
+}
+
 /* ── Desktop sidebar nav (>= 1024px) ─────────────────────────── */
 @media (min-width: 1024px) {
   .fw-main {

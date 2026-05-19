@@ -50,6 +50,15 @@ export function Layout() {
   const [createPostOpen, setCreatePostOpen] = useState(false);
   const { unreadCount } = useNotifications();
 
+  // Hauteur exacte de l'écran mesurée en JS — fiable sur iOS PWA (100dvh ne l'est pas)
+  const [appH, setAppH] = useState(() => window.innerHeight);
+  useEffect(() => {
+    const update = () => setAppH(window.innerHeight);
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
+
 
   // Show "+" button only on /tribes/:id (a specific community page)
   const communityMatch = location.pathname.match(/^\/tribes\/([^\/]+)$/);
@@ -98,7 +107,7 @@ export function Layout() {
   const createCommunityActive = location.pathname === "/tribes/create";
 
   return (
-    <div className="flex flex-col bg-background" style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, paddingTop: "env(safe-area-inset-top)" }}>
+    <div className="flex flex-col bg-background" style={{ height: appH, overflow: "hidden", paddingTop: "env(safe-area-inset-top)" }}>
       <Toaster
         position="top-center"
         toastOptions={{
