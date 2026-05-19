@@ -796,7 +796,7 @@ function sanitizePost(post: Record<string, unknown>, requestingUserId?: string):
 app.post("/make-server-218684af/posts", async (c) => {
   try {
     const body = await c.req.json();
-    const { user, streak, progress, hashtags, username } = body;
+    const { user, streak, progress, hashtags, username, voiceUrl, voiceDuration, voiceSubtitle } = body;
     if (!progress?.description?.trim()) return c.json({ error: "Contenu requis." }, 400);
     if (!progress?.type)               return c.json({ error: "Type requis." }, 400);
     if (!user?.name)                   return c.json({ error: "Utilisateur requis." }, 400);
@@ -804,6 +804,18 @@ app.post("/make-server-218684af/posts", async (c) => {
     const id = genId();
     const createdAt = new Date().toISOString();
     const resolvedUsername = normalizeUsername(username || user.name);
+
+    // Quota : 1 post vocal par utilisateur par 24h
+    if (voiceUrl) {
+      const lastVoiceTs = await kv.get(`ff:voice-quota:${resolvedUsername}`);
+      if (lastVoiceTs) {
+        const elapsed = Date.now() - Number(lastVoiceTs);
+        if (elapsed < 24 * 60 * 60 * 1000) {
+          const hoursLeft = Math.ceil((24 * 60 * 60 * 1000 - elapsed) / (60 * 60 * 1000));
+          return c.json({ error: `Tu as deja publie un vocal aujourd'hui. Reviens dans ${hoursLeft}h.` }, 429);
+        }
+      }
+    }
 
     const isAnonymous = !!(body.isAnonymous);
     const post = {
@@ -816,9 +828,15 @@ app.post("/make-server-218684af/posts", async (c) => {
       eloScore: 500,
       isAnonymous,
       realAuthorUsername: isAnonymous ? resolvedUsername : undefined,
+      voiceUrl: voiceUrl || undefined,
+      voiceDuration: typeof voiceDuration === "number" ? voiceDuration : undefined,
+      voiceSubtitle: voiceSubtitle ? String(voiceSubtitle).trim().slice(0, 200) : undefined,
     };
 
     await kv.set(`ff:post:${id}`, JSON.stringify(post));
+    if (voiceUrl) {
+      await kv.set(`ff:voice-quota:${resolvedUsername}`, String(Date.now()));
+    }
     await kv.set(`ff:elo:post:${id}`, "500");
     // Notifier les @mentions dans le texte du post (sauf post anonyme)
     if (!isAnonymous) {

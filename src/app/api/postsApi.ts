@@ -47,6 +47,9 @@ export interface ApiPost {
   isNew: boolean;
   createdAt: string;
   username: string;
+  voiceUrl?: string;
+  voiceDuration?: number;
+  voiceSubtitle?: string;
 }
 
 export interface CreatePostPayload {
@@ -66,6 +69,9 @@ export interface CreatePostPayload {
   images?: string[];
   username: string;
   isAnonymous?: boolean;
+  voiceUrl?: string;
+  voiceDuration?: number;
+  voiceSubtitle?: string;
 }
 
 // Crée un nouveau post

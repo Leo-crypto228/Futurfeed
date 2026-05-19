@@ -12,6 +12,7 @@ import { useFollow } from "../context/FollowContext";
 import { FollowButton } from "./FollowButton";
 import { fetchProfile, getCachedProfile, normalizeUsername } from "../api/profileCache";
 import { renderPostText } from "../utils/renderText";
+import { VoicePlayer } from "./VoicePlayer";
 import { reportInappropriate, reduceAuthor, markNotRelevant } from "../api/postActionsApi";
 import { fetchAuthorGoalProgress, getCachedGoalProgress } from "../api/goalProgressCache";
 import { deletePost } from "../api/postsApi";
@@ -69,6 +70,9 @@ interface ProgressCardProps {
   onPostDeleted?: () => void;
   isAnonymous?: boolean;
   isMineAnonymous?: boolean;
+  voiceUrl?: string;
+  voiceDuration?: number;
+  voiceSubtitle?: string;
 }
 
 function AnonAvatar({ size }: { size: number }) {
@@ -455,6 +459,9 @@ export function ProgressCard({
   onPostDeleted,
   isAnonymous = false,
   isMineAnonymous = false,
+  voiceUrl,
+  voiceDuration,
+  voiceSubtitle,
 }: ProgressCardProps) {
   const navigate = useNavigate();
   const { currentUserId } = useFollow();
@@ -908,22 +915,47 @@ export function ProgressCard({
               </span>
             </div>
 
-            {/* Description */}
-            <p style={{
-              color: "rgba(255,255,255,0.96)",
-              fontSize: 14,
-              lineHeight: 1.55,
-              whiteSpace: "pre-wrap",
-              margin: "0 0 8px",
-              ...(image && !isExpanded ? {
-                display: "-webkit-box",
-                WebkitBoxOrient: "vertical" as React.CSSProperties["WebkitBoxOrient"],
-                WebkitLineClamp: 3,
-                overflow: "hidden",
-              } : {}),
-            } as React.CSSProperties}>
-              {renderPostText(progress.description, navigate)}
-            </p>
+            {/* Description / Voice */}
+            {voiceUrl ? (
+              <div style={{ margin: "0 0 8px" }} onClick={(e) => e.stopPropagation()}>
+                {/* Titre */}
+                <div style={{
+                  fontSize: 15.5, fontWeight: 700, color: "rgba(255,255,255,0.96)",
+                  lineHeight: 1.35, marginBottom: 8, letterSpacing: "-0.1px",
+                  wordBreak: "break-word",
+                }}>
+                  {progress.description}
+                </div>
+                {/* Player vocal (meme design que dans les commentaires) */}
+                <VoicePlayer url={voiceUrl} duration={voiceDuration ?? 0} msgId={postId ?? `voice-${progress.description.slice(0, 16)}`} />
+                {/* Sous-titre */}
+                {voiceSubtitle && (
+                  <p style={{
+                    color: "rgba(235,235,245,0.65)", fontSize: 13.5,
+                    lineHeight: 1.5, whiteSpace: "pre-wrap",
+                    margin: "8px 0 0", wordBreak: "break-word",
+                  }}>
+                    {voiceSubtitle}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <p style={{
+                color: "rgba(255,255,255,0.96)",
+                fontSize: 14,
+                lineHeight: 1.55,
+                whiteSpace: "pre-wrap",
+                margin: "0 0 8px",
+                ...(image && !isExpanded ? {
+                  display: "-webkit-box",
+                  WebkitBoxOrient: "vertical" as React.CSSProperties["WebkitBoxOrient"],
+                  WebkitLineClamp: 3,
+                  overflow: "hidden",
+                } : {}),
+              } as React.CSSProperties}>
+                {renderPostText(progress.description, navigate)}
+              </p>
+            )}
 
             {/* "plus..." */}
             {image && !isExpanded && isExpandable && (

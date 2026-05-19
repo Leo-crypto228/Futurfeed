@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Check, ArrowLeft, AlertCircle, X, ImagePlus, ChevronDown, Globe, Users, Info, Send } from "lucide-react";
+import { Check, ArrowLeft, AlertCircle, X, ImagePlus, Info, Mic } from "lucide-react";
 import { useNavigate, useLocation } from "react-router";
 import { createPost, extractHashtags, LABEL_TO_TYPE, PostType } from "../api/postsApi";
 import { createWays } from "../api/waysApi";
@@ -9,12 +9,13 @@ import { linkPostReply } from "../api/sharesApi";
 import { postCheckin } from "../api/progressionApi";
 import { MY_USER_ID, MY_USER_NAME, MY_USER_AVATAR, MY_USER_OBJECTIVE, MY_USER_STREAK } from "../api/authStore";
 import { projectId, publicAnonKey } from "/utils/supabase/info";
-import { GifPicker, GifMessage } from "../components/GifPicker";
+import { VoicePlayer } from "../components/VoicePlayer";
 import { toast } from "sonner";
 
-const BASE    = `https://${projectId}.supabase.co/functions/v1/make-server-218684af`;
-const HEADERS: Record<string, string> = { "Content-Type": "application/json", Authorization: `Bearer ${publicAnonKey}` };
+const MAX_VOICE_SEC = 60;
+const HOLD_DURATION_MS = 1500;
 
+const BASE    = `https://${projectId}.supabase.co/functions/v1/make-server-218684af`;
 const POST_TYPES = ["Avancée", "Question", "Blocage", "Conseil(s)", "Actus"];
 
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
@@ -29,11 +30,6 @@ function validateImageFile(file: File): string | null {
   }
   return null;
 }
-
-const AUDIENCE_OPTIONS = [
-  { id: "everyone",  label: "Pour tous le monde",                   icon: Globe },
-  { id: "relations", label: "Relations et communauté(s) seulement", icon: Users },
-];
 
 // ── Badge preview ─────────────────────────────────────────────────────────────
 function TypePreview({ label }: { label: string }) {
@@ -168,40 +164,124 @@ export function CreateProgress() {
   const [images, setImages]         = useState<{ file: File; preview: string }[]>([]);
   const fileInputRef                = useRef<HTMLInputElement>(null);
 
-  // GIF
-  const [gifOpen, setGifOpen]       = useState(false);
-  const [selectedGif, setSelectedGif] = useState<string | null>(null);
+  // ── Vocal (press-hold mic) ────────────────────────────────────────────────
+  type VoiceMode = "idle" | "holding" | "recording" | "preview" | "uploading";
+  const [voiceMode, setVoiceMode] = useState<VoiceMode>("idle");
+  const voiceModeRef = useRef<VoiceMode>("idle");
+  const setVoiceModeBoth = useCallback((m: VoiceMode) => { voiceModeRef.current = m; setVoiceMode(m); }, []);
+  const [voiceBlob, setVoiceBlob] = useState<Blob | null>(null);
+  const [voicePreviewUrl, setVoicePreviewUrl] = useState<string | null>(null);
+  const [voiceDuration, setVoiceDuration] = useState(0);
+  const [voiceTitle, setVoiceTitle] = useState("");
+  const [voiceSubtitle, setVoiceSubtitle] = useState("");
+  const [recordingTime, setRecordingTime] = useState(0);
 
-  // Audience
-  const [audience, setAudience]           = useState<"everyone" | "relations">("everyone");
-  const [showAudienceMenu, setShowAudienceMenu] = useState(false);
-  const audienceRef                       = useRef<HTMLDivElement>(null);
-  const audienceSaveTimeout               = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const voiceChunksRef = useRef<Blob[]>([]);
+  const holdTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const recordStartRef = useRef<number>(0);
+  const recordTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const recordAutoStopRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Charger la préférence d'audience
-  useEffect(() => {
-    if (!MY_USER_ID) return;
-    fetch(`${BASE}/user-prefs/${MY_USER_ID}`, { headers: HEADERS })
-      .then((r) => r.json())
-      .then((data) => { if (data?.prefs?.audience) setAudience(data.prefs.audience); })
-      .catch((e) => console.error("Erreur chargement user-prefs:", e));
+  const clearVoiceTimers = useCallback(() => {
+    if (recordTimerRef.current) { clearInterval(recordTimerRef.current); recordTimerRef.current = null; }
+    if (recordAutoStopRef.current) { clearTimeout(recordAutoStopRef.current); recordAutoStopRef.current = null; }
+    if (holdTimeoutRef.current) { clearTimeout(holdTimeoutRef.current); holdTimeoutRef.current = null; }
   }, []);
 
-  const saveAudience = (value: "everyone" | "relations") => {
-    if (audienceSaveTimeout.current) clearTimeout(audienceSaveTimeout.current);
-    audienceSaveTimeout.current = setTimeout(() => {
-      if (!MY_USER_ID) return;
-      fetch(`${BASE}/user-prefs/${MY_USER_ID}`, { method: "POST", headers: HEADERS, body: JSON.stringify({ audience: value }) })
-        .catch((e) => console.error("Erreur sauvegarde user-prefs:", e));
-    }, 600);
-  };
+  const resetVoice = useCallback(() => {
+    clearVoiceTimers();
+    const rec = mediaRecorderRef.current;
+    if (rec && rec.state !== "inactive") {
+      try { rec.onstop = null; rec.stream.getTracks().forEach((t) => t.stop()); rec.stop(); } catch {}
+    }
+    mediaRecorderRef.current = null;
+    voiceChunksRef.current = [];
+    if (voicePreviewUrl) { try { URL.revokeObjectURL(voicePreviewUrl); } catch {} }
+    setVoiceBlob(null);
+    setVoicePreviewUrl(null);
+    setVoiceDuration(0);
+    setVoiceTitle("");
+    setVoiceSubtitle("");
+    setRecordingTime(0);
+    setVoiceModeBoth("idle");
+  }, [voicePreviewUrl, clearVoiceTimers, setVoiceModeBoth]);
 
+  const startRecording = useCallback(async () => {
+    try {
+      const mime = (() => {
+        if (typeof MediaRecorder === "undefined") return "";
+        for (const t of ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/aac"])
+          if (MediaRecorder.isTypeSupported(t)) return t;
+        return "";
+      })();
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+      voiceChunksRef.current = [];
+      rec.ondataavailable = (ev) => { if (ev.data.size > 0) voiceChunksRef.current.push(ev.data); };
+      rec.onstop = () => {
+        clearVoiceTimers();
+        const blob = new Blob(voiceChunksRef.current, { type: rec.mimeType || "audio/webm" });
+        stream.getTracks().forEach((t) => t.stop());
+        const dur = Math.max(1, Math.round((Date.now() - recordStartRef.current) / 1000));
+        if (blob.size < 1000) { resetVoice(); return; }
+        setVoiceBlob(blob);
+        const url = URL.createObjectURL(blob);
+        setVoicePreviewUrl(url);
+        setVoiceDuration(dur);
+        setVoiceModeBoth("preview");
+      };
+      rec.start(100);
+      mediaRecorderRef.current = rec;
+      recordStartRef.current = Date.now();
+      setVoiceModeBoth("recording");
+      setRecordingTime(0);
+      navigator.vibrate?.(25);
+      recordTimerRef.current = setInterval(() => {
+        setRecordingTime(Math.floor((Date.now() - recordStartRef.current) / 1000));
+      }, 250);
+      recordAutoStopRef.current = setTimeout(() => {
+        const r = mediaRecorderRef.current;
+        if (r && r.state !== "inactive") r.stop();
+      }, MAX_VOICE_SEC * 1000);
+    } catch {
+      toast.error("Accès au micro refusé", { description: "Active le micro dans les paramètres du navigateur." });
+      setVoiceModeBoth("idle");
+    }
+  }, [setVoiceModeBoth, clearVoiceTimers, resetVoice]);
+
+  const handleMicPointerDown = useCallback((e: React.PointerEvent) => {
+    e.preventDefault();
+    if (voiceModeRef.current !== "idle") return;
+    setVoiceModeBoth("holding");
+    navigator.vibrate?.(8);
+    holdTimeoutRef.current = setTimeout(() => {
+      if (voiceModeRef.current === "holding") startRecording();
+    }, HOLD_DURATION_MS);
+  }, [startRecording, setVoiceModeBoth]);
+
+  const handleMicPointerUp = useCallback(() => {
+    const mode = voiceModeRef.current;
+    if (mode === "holding") {
+      if (holdTimeoutRef.current) { clearTimeout(holdTimeoutRef.current); holdTimeoutRef.current = null; }
+      setVoiceModeBoth("idle");
+    } else if (mode === "recording") {
+      const r = mediaRecorderRef.current;
+      if (r && r.state !== "inactive") r.stop();
+    }
+  }, [setVoiceModeBoth]);
+
+  // Cleanup au unmount
   useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (audienceRef.current && !audienceRef.current.contains(e.target as Node)) setShowAudienceMenu(false);
+    return () => {
+      clearVoiceTimers();
+      const r = mediaRecorderRef.current;
+      if (r && r.state !== "inactive") {
+        try { r.onstop = null; r.stream.getTracks().forEach((t) => t.stop()); r.stop(); } catch {}
+      }
+      if (voicePreviewUrl) { try { URL.revokeObjectURL(voicePreviewUrl); } catch {} }
     };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleImagePick = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -224,62 +304,95 @@ export function CreateProgress() {
     setImages((prev) => { URL.revokeObjectURL(prev[index].preview); return prev.filter((_, i) => i !== index); });
   };
 
-  const isValid = text.trim().length > 0 && selectedType !== "";
+  const hasVoice = voiceMode === "preview" && !!voiceBlob;
+  const isValid = selectedType !== "" && (
+    hasVoice
+      ? voiceTitle.trim().length > 0
+      : text.trim().length > 0
+  );
 
   const handleSubmit = () => {
     if (!isValid || posted) return;
     setError(null);
 
-    // ── Optimistic UI : on marque comme posté IMMÉDIATEMENT ─────────────────
+    // ── Optimistic UI ────────────────────────────────────────────────────────
     setPosted(true);
-
-    // Naviguer vers le feed immédiatement
     navigate("/", { state: { refreshPosts: true } });
 
-    // ── Enregistrement en background (Supabase) ──────────────────────────────
     const doSave = async () => {
       try {
         const postType = LABEL_TO_TYPE[selectedType] as PostType;
-        const hashtags = extractHashtags(text);
 
-        // Upload images compressées (toutes, dans l'ordre, max 4)
+        // ─── Branche vocal ────────────────────────────────────────────────────
+        if (hasVoice && voiceBlob) {
+          const fd = new FormData();
+          const ext = (voiceBlob.type || "").includes("mp4") ? "m4a" : "webm";
+          fd.append("file", voiceBlob, `voice.${ext}`);
+          const upRes = await fetch(`${BASE}/upload-voice`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${publicAnonKey}` },
+            body: fd,
+          });
+          const upData = await upRes.json();
+          if (!upRes.ok || !upData.url) throw new Error(upData.error || "Erreur upload vocal");
+
+          const result = await createPost({
+            user: { name: MY_USER_NAME || "Utilisateur", avatar: MY_USER_AVATAR, objective: MY_USER_OBJECTIVE, followers: 0 },
+            streak: MY_USER_STREAK,
+            progress: { type: postType, description: voiceTitle.trim() },
+            hashtags: [],
+            username: MY_USER_ID,
+            voiceUrl: upData.url,
+            voiceDuration,
+            voiceSubtitle: voiceSubtitle.trim() || undefined,
+            isAnonymous: isAnonymous && selectedType === "Blocage" ? true : undefined,
+          });
+          window.dispatchEvent(new CustomEvent("fowards:post-created"));
+          if (quotedPost?.postId) {
+            linkPostReply(quotedPost.postId, result.post.id).catch((e) => console.error("Erreur liaison post-réponse:", e));
+          }
+          postCheckin(MY_USER_ID, result.post.id).catch((e) => console.error("Erreur post-checkin:", e));
+          return;
+        }
+
+        // ─── Branche texte (normale) ──────────────────────────────────────────
+        const hashtags = extractHashtags(text);
         const uploadedUrls: string[] = [];
         for (const { file } of images.slice(0, 4)) {
           const compressed = await compressImage(file);
           const formData = new FormData();
           formData.append("file", compressed, "image.jpg");
-          const upRes  = await fetch(`${BASE}/upload-image`, { method: "POST", headers: { Authorization: `Bearer ${publicAnonKey}` }, body: formData });
+          const upRes = await fetch(`${BASE}/upload-image`, { method: "POST", headers: { Authorization: `Bearer ${publicAnonKey}` }, body: formData });
           const upData = await upRes.json();
           if (!upRes.ok || !upData.url) throw new Error(upData.error ?? "Erreur upload image");
           uploadedUrls.push(upData.url);
         }
 
         const result = await createPost({
-          user:     { name: MY_USER_NAME || "Utilisateur", avatar: MY_USER_AVATAR, objective: MY_USER_OBJECTIVE, followers: 0 },
-          streak:   MY_USER_STREAK,
+          user: { name: MY_USER_NAME || "Utilisateur", avatar: MY_USER_AVATAR, objective: MY_USER_OBJECTIVE, followers: 0 },
+          streak: MY_USER_STREAK,
           progress: { type: postType, description: text.trim() },
           hashtags,
           username: MY_USER_ID,
-          images:   uploadedUrls.length > 0 ? uploadedUrls : undefined,
-          image:    uploadedUrls[0] ?? selectedGif ?? undefined,
+          images: uploadedUrls.length > 0 ? uploadedUrls : undefined,
+          image: uploadedUrls[0] ?? undefined,
           isAnonymous: isAnonymous && selectedType === "Blocage" ? true : undefined,
         });
 
-        // Signale au feed que le post est prêt (toutes les images uploadées)
         window.dispatchEvent(new CustomEvent("fowards:post-created"));
-
-        // Lien réponse si post quoté
         if (quotedPost?.postId) {
           linkPostReply(quotedPost.postId, result.post.id).catch((e) => console.error("Erreur liaison post-réponse:", e));
         }
-
-        // Checkin progression
         postCheckin(MY_USER_ID, result.post.id).catch((e) => console.error("Erreur post-checkin:", e));
 
       } catch (err) {
         console.error("Erreur save post background:", err);
-        // Toast d'erreur discret (l'utilisateur est déjà sur le feed)
-        toast.error("Le post n'a pas pu être enregistré", { description: err instanceof Error ? err.message : "Réessaie", duration: 4000 });
+        const msg = err instanceof Error ? err.message : "Réessaie";
+        if (/aujourd|reviens|429/i.test(msg)) {
+          toast.error("Quota vocal atteint", { description: "1 post vocal par 24h. Reviens demain.", duration: 6000 });
+        } else {
+          toast.error("Le post n'a pas pu être enregistré", { description: msg, duration: 4000 });
+        }
       }
     };
 
@@ -545,27 +658,89 @@ export function CreateProgress() {
           </motion.div>
         )}
 
-        {/* ── Zone de texte (Partage only) ── */}
+        {/* ── Zone de texte / Vocal (Partage only) ── */}
         <motion.div className="mt-8" style={{ display: mode === "partage" ? undefined : "none" }} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.16, duration: 0.4 }}>
-          <textarea
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder="Sur quoi tu bosses aujourd'hui ?"
-            maxLength={1000}
-            rows={7}
-            style={{ width: "100%", background: "transparent", border: "none", outline: "none", resize: "none", fontSize: 17, fontWeight: 400, color: "#f0f0f5", lineHeight: 1.65, letterSpacing: "0.1px", caretColor: "#6366f1", whiteSpace: "pre-wrap", wordWrap: "break-word", overflowWrap: "break-word", wordBreak: "break-word" }}
-            className="placeholder:text-[rgba(144,144,168,0.45)]"
-          />
+          {voiceMode === "preview" && voicePreviewUrl ? (
+            // ── Aperçu vocal + titre + sous-titre ────────────────────────────
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <VoicePlayer url={voicePreviewUrl} duration={voiceDuration} msgId="create-preview" />
+                <motion.button type="button" whileTap={{ scale: 0.88 }} onClick={resetVoice}
+                  style={{ width: 30, height: 30, borderRadius: "50%", background: "rgba(239,68,68,0.14)", border: "0.5px solid rgba(239,68,68,0.32)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>
+                  <X style={{ width: 14, height: 14, color: "#f87171" }} />
+                </motion.button>
+              </div>
 
-          {/* Compteur de caractères */}
-          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 2 }}>
-            <span style={{ fontSize: 11, color: text.length > 900 ? "rgba(251,191,36,0.70)" : "rgba(255,255,255,0.20)", fontWeight: 500, transition: "color 0.2s" }}>
-              {text.length}/1000
-            </span>
-          </div>
+              <input
+                value={voiceTitle}
+                onChange={(e) => setVoiceTitle(e.target.value)}
+                placeholder="Titre (obligatoire)"
+                maxLength={80}
+                style={{ width: "100%", marginTop: 16, background: "transparent", border: "none", outline: "none", fontSize: 19, fontWeight: 700, color: "#f0f0f5", lineHeight: 1.35, letterSpacing: "-0.2px", caretColor: "#6366f1" }}
+                className="placeholder:text-[rgba(144,144,168,0.50)]"
+              />
+              <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                <span style={{ fontSize: 10.5, color: voiceTitle.length > 70 ? "rgba(251,191,36,0.70)" : "rgba(255,255,255,0.18)", fontWeight: 500 }}>
+                  {voiceTitle.length}/80
+                </span>
+              </div>
+
+              <textarea
+                value={voiceSubtitle}
+                onChange={(e) => setVoiceSubtitle(e.target.value)}
+                placeholder="Description (facultatif)"
+                maxLength={200}
+                rows={3}
+                style={{ width: "100%", marginTop: 6, background: "transparent", border: "none", outline: "none", resize: "none", fontSize: 14.5, fontWeight: 400, color: "rgba(235,235,245,0.78)", lineHeight: 1.5, caretColor: "#6366f1" }}
+                className="placeholder:text-[rgba(144,144,168,0.40)]"
+              />
+              <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                <span style={{ fontSize: 10.5, color: voiceSubtitle.length > 180 ? "rgba(251,191,36,0.70)" : "rgba(255,255,255,0.18)", fontWeight: 500 }}>
+                  {voiceSubtitle.length}/200
+                </span>
+              </div>
+            </div>
+          ) : voiceMode === "recording" ? (
+            // ── UI d'enregistrement ──────────────────────────────────────────
+            <div style={{ minHeight: 180, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14, padding: "20px 0" }}>
+              <motion.div
+                animate={{ scale: [1, 1.12, 1] }}
+                transition={{ duration: 1.1, repeat: Infinity, ease: "easeInOut" }}
+                style={{ width: 64, height: 64, borderRadius: "50%", background: "rgba(239,68,68,0.18)", border: "1px solid rgba(239,68,68,0.42)", display: "flex", alignItems: "center", justifyContent: "center" }}
+              >
+                <Mic style={{ width: 28, height: 28, color: "#f87171" }} />
+              </motion.div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: "#f0f0f5", letterSpacing: "-0.2px", fontVariantNumeric: "tabular-nums" }}>
+                {Math.floor(recordingTime / 60)}:{(recordingTime % 60).toString().padStart(2, "0")} <span style={{ fontSize: 13, fontWeight: 500, color: "rgba(255,255,255,0.30)" }}>/ 1:00</span>
+              </div>
+              <div style={{ fontSize: 12, color: "rgba(255,255,255,0.45)", textAlign: "center" }}>
+                Relâche pour terminer l'enregistrement
+              </div>
+            </div>
+          ) : (
+            // ── Textarea normale ─────────────────────────────────────────────
+            <>
+              <textarea
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                placeholder="Sur quoi tu bosses aujourd'hui ?"
+                maxLength={1000}
+                rows={7}
+                style={{ width: "100%", background: "transparent", border: "none", outline: "none", resize: "none", fontSize: 17, fontWeight: 400, color: "#f0f0f5", lineHeight: 1.65, letterSpacing: "0.1px", caretColor: "#6366f1", whiteSpace: "pre-wrap", wordWrap: "break-word", overflowWrap: "break-word", wordBreak: "break-word" }}
+                className="placeholder:text-[rgba(144,144,168,0.45)]"
+              />
+
+              {/* Compteur de caractères */}
+              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 2 }}>
+                <span style={{ fontSize: 11, color: text.length > 900 ? "rgba(251,191,36,0.70)" : "rgba(255,255,255,0.20)", fontWeight: 500, transition: "color 0.2s" }}>
+                  {text.length}/1000
+                </span>
+              </div>
+            </>
+          )}
 
           {/* Hashtags extraits */}
-          {text.trim().length > 0 && extractHashtags(text).length > 0 && (
+          {voiceMode === "idle" && text.trim().length > 0 && extractHashtags(text).length > 0 && (
             <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 4 }}>
               {extractHashtags(text).map((tag) => (
                 <span key={tag} style={{ fontSize: 12, color: "rgba(139,92,246,0.70)", fontWeight: 500 }}>{tag}</span>
@@ -573,8 +748,9 @@ export function CreateProgress() {
             </div>
           )}
 
-          {/* Aperçu images — carousel horizontal 3:4 */}
-          
+          {/* Aperçu images — carousel horizontal 3:4 (pas de média en mode vocal) */}
+          {voiceMode === "idle" && (
+            <>
             {images.length > 0 && (
               <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
                 style={{ marginTop: 14, position: "relative" }}>
@@ -597,78 +773,95 @@ export function CreateProgress() {
             )}
           
 
-          {/* Aperçu GIF */}
-          
-            {selectedGif && (
-              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} style={{ marginTop: 14, position: "relative", display: "inline-block" }}>
-                <GifMessage url={selectedGif} />
-                <motion.button whileTap={{ scale: 0.88 }} onClick={() => setSelectedGif(null)}
-                  style={{ position: "absolute", top: 6, right: 6, width: 24, height: 24, borderRadius: "50%", background: "rgba(0,0,0,0.65)", backdropFilter: "blur(8px)", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <X style={{ width: 12, height: 12, color: "#fff" }} />
-                </motion.button>
-              </motion.div>
-            )}
-          
+          </>
+          )}
 
-          {/* ── Barre d'actions ── */}
+          {/* ── Barre d'actions compacte ── */}
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 16, paddingBottom: 4 }}>
-            {/* Photo */}
-            <motion.button type="button" whileTap={{ scale: 0.91 }} onClick={() => fileInputRef.current?.click()}
-              disabled={images.length >= 4}
-              style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 13px", borderRadius: 999, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.10)", cursor: images.length >= 4 ? "not-allowed" : "pointer", opacity: images.length >= 4 ? 0.4 : 1 }}>
-              <ImagePlus style={{ width: 16, height: 16, color: "rgba(255,255,255,0.55)" }} />
-              <span style={{ fontSize: 13, fontWeight: 500, color: "rgba(255,255,255,0.50)" }}>{images.length > 0 ? `${images.length}/4` : "Photo"}</span>
+            {/* Photo (icon only) */}
+            <motion.button type="button" whileTap={{ scale: 0.88 }} onClick={() => fileInputRef.current?.click()}
+              disabled={images.length >= 4 || voiceMode !== "idle"}
+              style={{
+                width: 38, height: 38, borderRadius: "50%",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                background: "rgba(255,255,255,0.06)",
+                border: "1px solid rgba(255,255,255,0.10)",
+                cursor: (images.length >= 4 || voiceMode !== "idle") ? "not-allowed" : "pointer",
+                opacity: (images.length >= 4 || voiceMode !== "idle") ? 0.4 : 1,
+                flexShrink: 0,
+              }}>
+              <ImagePlus style={{ width: 17, height: 17, color: "rgba(255,255,255,0.65)" }} />
             </motion.button>
             <input ref={fileInputRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={handleImagePick} />
 
-            {/* GIF */}
-            <motion.button type="button" whileTap={{ scale: 0.91 }} onClick={() => setGifOpen(true)}
-              style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", padding: "7px 11px", borderRadius: 999, background: selectedGif ? "rgba(99,102,241,0.14)" : "rgba(255,255,255,0.06)", border: selectedGif ? "1px solid rgba(99,102,241,0.38)" : "1px solid rgba(255,255,255,0.10)", cursor: "pointer" }}>
-              <span style={{ fontSize: 12, fontWeight: 800, color: selectedGif ? "#a5b4fc" : "rgba(255,255,255,0.50)", letterSpacing: "0.04em" }}>GIF</span>
+            {/* Mic (press-hold 1.5s) */}
+            <motion.button
+              type="button"
+              onPointerDown={handleMicPointerDown}
+              onPointerUp={handleMicPointerUp}
+              onPointerCancel={handleMicPointerUp}
+              onPointerLeave={handleMicPointerUp}
+              onContextMenu={(e) => e.preventDefault()}
+              disabled={images.length > 0 || (voiceMode === "preview")}
+              animate={{
+                scale: voiceMode === "holding" ? 1.08 : voiceMode === "recording" ? 1.15 : 1,
+                background: voiceMode === "recording"
+                  ? "rgba(239,68,68,0.28)"
+                  : voiceMode === "holding"
+                    ? "rgba(99,102,241,0.18)"
+                    : "rgba(255,255,255,0.06)",
+                borderColor: voiceMode === "recording"
+                  ? "rgba(239,68,68,0.55)"
+                  : voiceMode === "holding"
+                    ? "rgba(99,102,241,0.45)"
+                    : "rgba(255,255,255,0.10)",
+              }}
+              transition={{ duration: 0.18 }}
+              style={{
+                width: 38, height: 38, borderRadius: "50%",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                border: "1px solid",
+                cursor: (images.length > 0 || voiceMode === "preview") ? "not-allowed" : "pointer",
+                opacity: (images.length > 0 || voiceMode === "preview") ? 0.4 : 1,
+                flexShrink: 0,
+                touchAction: "none",
+                userSelect: "none",
+              }}>
+              <Mic style={{ width: 17, height: 17, color: voiceMode === "recording" ? "#f87171" : voiceMode === "holding" ? "#a5b4fc" : "rgba(255,255,255,0.65)" }} />
             </motion.button>
 
-            {/* Audience */}
-            <div ref={audienceRef} style={{ position: "relative" }}>
-              <motion.button type="button" whileTap={{ scale: 0.95 }} onClick={() => setShowAudienceMenu((v) => !v)}
-                style={{ display: "flex", alignItems: "center", gap: 7, padding: "7px 13px", borderRadius: 999, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.10)", cursor: "pointer" }}>
-                {audience === "everyone"
-                  ? <Globe style={{ width: 13, height: 13, color: "rgba(255,255,255,0.55)" }} />
-                  : <Users style={{ width: 13, height: 13, color: "rgba(255,255,255,0.55)" }} />
-                }
-                <span style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.72)", whiteSpace: "nowrap" }}>
-                  {audience === "everyone" ? "Pour tous le monde" : "Relations et communauté(s)"}
-                </span>
-                <motion.div animate={{ rotate: showAudienceMenu ? 180 : 0 }} transition={{ duration: 0.18 }}>
-                  <ChevronDown style={{ width: 13, height: 13, color: "rgba(255,255,255,0.40)" }} />
-                </motion.div>
-              </motion.button>
+            <div style={{ flex: 1 }} />
 
-              
-                {showAudienceMenu && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -6, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }}
-                    transition={{ duration: 0.16, ease: [0.25, 0, 0.35, 1] }}
-                    style={{ position: "absolute", bottom: "calc(100% + 8px)", right: 0, minWidth: 260, background: "rgba(18,18,22,0.96)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 14, boxShadow: "0 8px 32px rgba(0,0,0,0.55)", backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)", overflow: "hidden", zIndex: 100 }}
-                  >
-                    {AUDIENCE_OPTIONS.map((opt) => {
-                      const Icon = opt.icon;
-                      const isSelected = audience === opt.id;
-                      return (
-                        <motion.button key={opt.id} type="button" whileTap={{ scale: 0.98 }}
-                          onClick={() => { setAudience(opt.id as "everyone" | "relations"); setShowAudienceMenu(false); saveAudience(opt.id as "everyone" | "relations"); }}
-                          style={{ width: "100%", display: "flex", alignItems: "center", gap: 11, padding: "12px 16px", background: isSelected ? "rgba(255,255,255,0.06)" : "transparent", border: "none", cursor: "pointer", textAlign: "left", borderBottom: opt.id === "everyone" ? "1px solid rgba(255,255,255,0.07)" : "none", transition: "background 0.15s" }}>
-                          <div style={{ width: 32, height: 32, borderRadius: "50%", background: isSelected ? "rgba(99,102,241,0.18)" : "rgba(255,255,255,0.07)", border: isSelected ? "1px solid rgba(99,102,241,0.30)" : "1px solid rgba(255,255,255,0.10)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                            <Icon style={{ width: 14, height: 14, color: isSelected ? "#a5b4fc" : "rgba(255,255,255,0.50)" }} />
-                          </div>
-                          <span style={{ fontSize: 13, fontWeight: isSelected ? 700 : 500, color: isSelected ? "rgba(240,240,245,0.92)" : "rgba(255,255,255,0.65)", lineHeight: 1.35 }}>{opt.label}</span>
-                          {isSelected && <div style={{ marginLeft: "auto" }}><Check style={{ width: 14, height: 14, color: "#a5b4fc" }} /></div>}
-                        </motion.button>
-                      );
-                    })}
-                  </motion.div>
-                )}
-              
-            </div>
+            {/* Publish (compact, violet discret, à droite) */}
+            <motion.button
+              type="button"
+              onClick={handleSubmit}
+              disabled={!isValid || posted}
+              whileTap={isValid && !posted ? { scale: 0.94 } : {}}
+              animate={{
+                background: posted
+                  ? "#ffffff"
+                  : isValid
+                    ? "rgba(99,102,241,0.85)"
+                    : "rgba(99,102,241,0.18)",
+                color: posted ? "#4f46e5" : isValid ? "#ffffff" : "rgba(165,180,252,0.40)",
+              }}
+              transition={{ duration: 0.18 }}
+              style={{
+                padding: "8px 18px",
+                borderRadius: 999,
+                border: "none",
+                fontSize: 13,
+                fontWeight: 700,
+                letterSpacing: "-0.05px",
+                cursor: isValid && !posted ? "pointer" : "not-allowed",
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                flexShrink: 0,
+              }}>
+              {posted ? <><Check style={{ width: 14, height: 14 }} /> Publié</> : "Publier"}
+            </motion.button>
           </div>
         </motion.div>
 
@@ -681,50 +874,6 @@ export function CreateProgress() {
             </motion.div>
         )}
 
-        {/* ── Bouton Publier Partage — masqué en mode Ways ── */}
-        <motion.div
-          style={{ display: mode === "partage" ? undefined : "none" }}
-          className="mt-8 mb-4"
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.22, duration: 0.4 }}
-        >
-          <motion.button
-            type="button"
-            onClick={handleSubmit}
-            disabled={!isValid || posted}
-            whileTap={isValid && !posted ? { scale: 0.97 } : {}}
-            animate={{
-              background: posted ? "#ffffff" : isValid ? "#111111" : "#0a0a0a",
-              borderColor: posted ? "#ffffff" : isValid ? "rgba(255,255,255,0.30)" : "rgba(255,255,255,0.10)",
-            }}
-            transition={{ duration: 0.18 }}
-            style={{
-              width: "100%",
-              padding: "16px",
-              borderRadius: 100,
-              border: "1px solid rgba(255,255,255,0.10)",
-              color: posted ? "#ffffff" : isValid ? "rgba(255,255,255,0.90)" : "rgba(255,255,255,0.28)",
-              fontSize: 16,
-              fontWeight: 700,
-              cursor: isValid && !posted ? "pointer" : "not-allowed",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 8,
-              letterSpacing: "-0.1px",
-              transition: "color 0.18s ease",
-            }}
-          >
-            {posted
-              ? <><Check style={{ width: 18, height: 18 }} /> Publié !</>
-              : "Publier"
-            }
-          </motion.button>
-        </motion.div>
-
-        {/* GIF Picker */}
-        <GifPicker isOpen={gifOpen} onClose={() => setGifOpen(false)} onSelect={(url) => { setSelectedGif(url); setGifOpen(false); }} />
       </div>
     </div>
   );

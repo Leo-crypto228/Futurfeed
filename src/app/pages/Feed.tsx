@@ -902,6 +902,9 @@ export function Feed() {
                       relevantCount={post.relevantCount} commentsCount={post.commentsCount}
                       sharesCount={post.sharesCount} viewsCount={post.viewsCount}
                       postCreatedAt={(post as any).createdAt}
+                      voiceUrl={(post as any).voiceUrl}
+                      voiceDuration={(post as any).voiceDuration}
+                      voiceSubtitle={(post as any).voiceSubtitle}
                       onPostDeleted={() => setFollowingPosts((prev) => prev.filter((p) => p.id !== post.id))}
                     />
                   </motion.div>
@@ -986,6 +989,9 @@ export function Feed() {
                     sharesCount={post.sharesCount}
                     viewsCount={post.viewsCount}
                     postCreatedAt={(post as any).createdAt}
+                    voiceUrl={(post as any).voiceUrl}
+                    voiceDuration={(post as any).voiceDuration}
+                    voiceSubtitle={(post as any).voiceSubtitle}
                     onPostDeleted={() => {
                       setApiPosts((prev) => prev.filter((p) => p.id !== post.id));
                       if (_feedCache) _feedCache.posts = _feedCache.posts.filter((p) => p.id !== post.id);
