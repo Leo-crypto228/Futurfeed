@@ -98,7 +98,7 @@ export function Layout() {
   const createCommunityActive = location.pathname === "/tribes/create";
 
   return (
-    <div className="flex flex-col bg-background" style={{ height: "100dvh", overflow: "hidden", maxWidth: "100vw", paddingTop: "env(safe-area-inset-top)" }}>
+    <div className="flex flex-col bg-background" style={{ height: "100dvh", overflowX: "hidden", maxWidth: "100vw", paddingTop: "env(safe-area-inset-top)" }}>
       {/* Toaster global pour toutes les notifications */}
       <Toaster
         position="top-center"
