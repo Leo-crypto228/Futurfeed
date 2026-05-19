@@ -14,7 +14,7 @@ import { VideoRecorder } from "../components/VideoRecorder";
 import { toast } from "sonner";
 
 const MAX_VOICE_SEC = 60;
-const HOLD_DURATION_MS = 1500;
+const HOLD_DURATION_MS = 500;
 
 const BASE    = `https://${projectId}.supabase.co/functions/v1/make-server-218684af`;
 const POST_TYPES = ["Avancée", "Question", "Blocage", "Conseil(s)", "Actus"];
@@ -530,7 +530,7 @@ export function CreateProgress() {
         whileTap={{ scale: 0.88 }}
         onClick={() => navigate("/")}
         style={{
-          position: "fixed", top: 16, right: 16, zIndex: 100,
+          position: "fixed", top: "max(20px, calc(env(safe-area-inset-top, 0px) + 12px))", right: 16, zIndex: 500,
           width: 38, height: 38, borderRadius: "50%",
           background: "rgba(255,255,255,0.10)",
           border: "1px solid rgba(255,255,255,0.14)",
