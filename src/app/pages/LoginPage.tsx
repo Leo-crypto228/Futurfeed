@@ -196,7 +196,7 @@ export function LoginPage() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
         style={{
-          position: "absolute", top: 24, left: 24, zIndex: 10,
+          position: "absolute", top: "calc(env(safe-area-inset-top, 0px) + 24px)", left: 24, zIndex: 10,
           fontSize: 17, fontWeight: 800, color: "#fff", letterSpacing: "-0.3px",
         }}
       >

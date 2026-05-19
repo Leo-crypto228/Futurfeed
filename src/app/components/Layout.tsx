@@ -99,7 +99,7 @@ export function Layout() {
   const createCommunityActive = location.pathname === "/tribes/create";
 
   return (
-    <div className="fw-app-root flex flex-col bg-background" style={{ overflow: "hidden", paddingTop: "env(safe-area-inset-top)" }}>
+    <div className="fw-app-root flex flex-col bg-background">
       <Toaster
         position="top-center"
         toastOptions={{
@@ -116,7 +116,7 @@ export function Layout() {
       <FcoinNotificationWatcher />
       <main
         className={`flex-1 overflow-y-auto overflow-x-hidden${hideNav ? "" : " fw-main"}`}
-        style={{ paddingBottom: 0, WebkitOverflowScrolling: "touch" } as React.CSSProperties}
+        style={{ paddingBottom: hideNav ? 0 : "calc(60px + env(safe-area-inset-bottom, 0px))", WebkitOverflowScrolling: "touch" } as React.CSSProperties}
       >
         <Suspense fallback={
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "60vh" }}>
@@ -130,9 +130,8 @@ export function Layout() {
       {/* ── NAV — flex-flow sur mobile (dans le conteneur fixed = bas de l'écran garanti) ── */}
       {!hideNav && (
         <motion.nav
-          className="fw-nav flex bg-black w-full justify-center lg:fixed lg:z-[50] lg:left-0 lg:top-0 lg:bottom-0 lg:w-[72px] lg:flex-col lg:justify-center"
+          className="fw-nav fixed bottom-0 left-0 right-0 z-50 flex bg-black w-full justify-center lg:right-auto lg:top-0 lg:bottom-0 lg:w-[72px] lg:flex-col lg:justify-center"
           style={{
-            flexShrink: 0,
             borderTop: "0.5px solid rgba(255,255,255,0.10)",
             paddingBottom: "env(safe-area-inset-bottom, 0px)",
           }}
