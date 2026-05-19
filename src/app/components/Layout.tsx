@@ -116,7 +116,7 @@ export function Layout() {
       <FcoinNotificationWatcher />
       <main
         className={`flex-1 overflow-y-auto overflow-x-hidden${hideNav ? "" : " fw-main"}`}
-        style={{ paddingBottom: 0 }}
+        style={{ paddingBottom: hideNav ? 0 : "calc(60px + env(safe-area-inset-bottom, 0px))" }}
       >
         <Suspense fallback={
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "60vh" }}>
@@ -130,14 +130,14 @@ export function Layout() {
       {/* ── NAV ────────────────────────────────────────────────────── */}
       {!hideNav && (
         <motion.nav
-          className="fw-nav flex bg-black w-full justify-center lg:fixed lg:z-[50] lg:left-0 lg:top-0 lg:bottom-0 lg:w-[72px] lg:flex-col lg:justify-center"
+          className="fw-nav fixed z-[50] flex bg-black bottom-0 left-0 right-0 justify-center lg:right-auto lg:top-0 lg:bottom-0 lg:w-[72px] lg:flex-col lg:justify-center"
           style={{
             borderTop: "0.5px solid rgba(255,255,255,0.10)",
             paddingBottom: "env(safe-area-inset-bottom, 0px)",
           }}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.3 }}
+          initial={{ y: 80, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ type: "spring", stiffness: 380, damping: 36 }}
         >
           <div className="w-full max-w-[672px] flex items-center lg:flex-col lg:max-w-none lg:gap-4">
 

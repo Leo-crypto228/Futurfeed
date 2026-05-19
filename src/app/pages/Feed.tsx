@@ -302,24 +302,25 @@ export function Feed() {
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const headerRef = useRef<HTMLDivElement>(null);
   const [headerH, setHeaderH] = useState(0);
+  const logoSearchRef = useRef<HTMLDivElement>(null);
+  const [logoSearchH, setLogoSearchH] = useState(117);
   const tabsRef = useRef<HTMLDivElement>(null);
-  const [tabsH, setTabsH] = useState(48);
 
   useEffect(() => {
     if (!headerRef.current) return;
     const ro = new ResizeObserver((entries) => {
-      for (const e of entries) setHeaderH(e.contentRect.height + 2); // +2 for border
+      for (const e of entries) setHeaderH(e.contentRect.height + 2);
     });
     ro.observe(headerRef.current);
     return () => ro.disconnect();
   }, []);
 
   useEffect(() => {
-    if (!tabsRef.current) return;
+    if (!logoSearchRef.current) return;
     const ro = new ResizeObserver((entries) => {
-      for (const e of entries) setTabsH(e.contentRect.height);
+      for (const e of entries) setLogoSearchH(e.contentRect.height);
     });
-    ro.observe(tabsRef.current);
+    ro.observe(logoSearchRef.current);
     return () => ro.disconnect();
   }, []);
 
@@ -648,10 +649,10 @@ export function Feed() {
         ref={headerRef}
         className="fixed left-0 right-0 z-10 bg-background/95 backdrop-blur-xl border-b border-border/50"
         style={{ top: "env(safe-area-inset-top)" }}
-        animate={{ y: headerVisible ? 0 : -(Math.max(0, (headerH || 165) - (tabsH || 48))) }}
+        animate={{ y: headerVisible ? 0 : -(logoSearchH) }}
         transition={{ type: "spring", stiffness: 420, damping: 38, mass: 0.8 }}
       >
-        <div className="max-w-2xl mx-auto px-3 pt-4 pb-0">
+        <div ref={logoSearchRef} className="max-w-2xl mx-auto px-3 pt-4 pb-0">
 
           {/* Row 1: logo centré */}
           <div className="flex items-center justify-center mb-3">
@@ -730,7 +731,10 @@ export function Feed() {
             
           </div>
 
-          {/* Row 3: Tabs */}
+        </div>{/* end logoSearchRef — tabs intentionnellement hors de ce div */}
+
+        {/* Row 3: Tabs — reste visible quand le header se cache */}
+        <div className="max-w-2xl mx-auto px-3">
           <div ref={tabsRef} className="flex">
             {TABS.map((tab) => (
               <button
