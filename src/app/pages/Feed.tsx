@@ -325,26 +325,36 @@ export function Feed() {
       if (savedStr !== null) {
         sessionStorage.removeItem("ff:feedScroll");
         const savedY = parseInt(savedStr, 10);
-        if (savedY > 0 && scrollEl) {
-          scrollEl.scrollTop = savedY;
+        if (savedY > 0) {
+          if (scrollEl) scrollEl.scrollTop = savedY;
+          window.scrollTo(0, savedY);
           lastScrollY.current = savedY;
-          return; // ne pas remettre à zéro
+          return;
         }
       }
     } catch {}
     // Navigation fraîche → remise à zéro
     if (scrollEl) scrollEl.scrollTop = 0;
+    window.scrollTo(0, 0);
     lastScrollY.current = 0;
   }, [location.pathname]);
 
   useEffect(() => {
     const scrollEl = document.getElementById("app-scroll") as HTMLElement | null;
-    if (!scrollEl) return;
+
+    // ── Déterminer le vrai conteneur de scroll ─────────────────────────────
+    // Sur desktop/browser: fw-app-root a height:100vh donc #app-scroll scroll.
+    // Sur certains setups: c'est window qui scroll. On écoute LES DEUX et on
+    // prend le Y de celui qui a réellement bougé. Le deuxième appel voit
+    // delta === 0 (lastScrollY déjà mis à jour) et sort immédiatement.
+    const getY = () => {
+      const elY = scrollEl?.scrollTop ?? 0;
+      return elY > 0 ? elY : window.scrollY;
+    };
 
     // 8 px accumulation buffer — safe on iOS where each event is only 1-3 px.
-    // Direction flip resets the buffer so only intentional scrolls trigger.
     let buf = 0;
-    let lastDir = 0; // +1 down, -1 up
+    let lastDir = 0;
 
     // Single source of truth: update header state AND notify Layout's nav in
     // the same synchronous call → React batches both into one render frame.
@@ -354,26 +364,30 @@ export function Feed() {
     };
 
     const onScroll = () => {
-      const y = scrollEl.scrollTop;
+      const y = getY();
       const delta = y - lastScrollY.current;
       lastScrollY.current = y;
 
-      // Back at very top → always show
       if (y < 8) { buf = 0; lastDir = 0; setVisible(true); return; }
-      if (delta === 0) return;
+      if (delta === 0) return; // déduplique les doubles-feux window + element
 
-      const dir = delta > 0 ? 1 : -1; // +1 = scrolling down, -1 = scrolling up
-      if (dir !== lastDir) { buf = 0; lastDir = dir; } // direction flip → reset buffer
+      const dir = delta > 0 ? 1 : -1;
+      if (dir !== lastDir) { buf = 0; lastDir = dir; }
       buf += Math.abs(delta);
 
-      if (buf >= 8) { // 8 px threshold reached
-        setVisible(dir < 0); // up → show (true), down → hide (false)
+      if (buf >= 8) {
+        setVisible(dir < 0); // up → show, down → hide
         buf = 0;
       }
     };
 
-    scrollEl.addEventListener("scroll", onScroll, { passive: true });
-    return () => scrollEl.removeEventListener("scroll", onScroll);
+    // Écouter sur les deux cibles — le double-fire est neutralisé par delta === 0
+    scrollEl?.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      scrollEl?.removeEventListener("scroll", onScroll);
+      window.removeEventListener("scroll", onScroll);
+    };
   }, []);
 
   // Utiliser les vraies données de l'utilisateur connecté

@@ -92,7 +92,7 @@ export function VideoRecorder({ maxSeconds, onReady, onCancel }: VideoRecorderPr
         setRecState("preview");
       };
 
-      rec.start(100);
+      rec.start(); // pas de timeslice — ondataavailable fiable sur iOS (tout arrive au stop())
       recRef.current = rec;
       startRef.current = Date.now();
       setRecState("recording");
