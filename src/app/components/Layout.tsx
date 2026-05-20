@@ -110,8 +110,9 @@ export function Layout() {
       />
       <FcoinNotificationWatcher />
       <main
+        id="app-scroll"
         className={`flex-1 overflow-y-auto overflow-x-hidden${hideNav ? "" : " fw-main"}`}
-        style={{ paddingBottom: hideNav ? 0 : "calc(60px + env(safe-area-inset-bottom, 0px))", WebkitOverflowScrolling: "touch" } as React.CSSProperties}
+        style={{ paddingBottom: hideNav ? 0 : 60, WebkitOverflowScrolling: "touch" } as React.CSSProperties}
       >
         <Suspense fallback={
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "60vh" }}>
@@ -128,7 +129,7 @@ export function Layout() {
           className="fw-nav fixed bottom-0 left-0 right-0 z-50 flex bg-black w-full justify-center lg:right-auto lg:top-0 lg:bottom-0 lg:w-[72px] lg:flex-col lg:justify-center"
           style={{
             borderTop: "0.5px solid rgba(255,255,255,0.10)",
-            paddingBottom: "env(safe-area-inset-bottom, 0px)",
+            paddingBottom: 0,
           }}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -136,19 +137,19 @@ export function Layout() {
         >
           <div className="w-full max-w-[672px] flex items-center lg:flex-col lg:max-w-none lg:gap-4">
 
-            <Link to="/" className="flex-1 h-[60px] flex justify-center items-center lg:flex-none lg:h-[56px] lg:w-full" style={{ textDecoration: "none" }}>
+            <Link to="/" className="flex-1 h-[56px] flex justify-center items-center lg:flex-none lg:h-[56px] lg:w-full" style={{ textDecoration: "none" }}>
               <motion.div whileTap={{ scale: 0.82 }}>
                 <Home style={{ width: 25, height: 25, color: isActive("/") ? "#fff" : "rgba(255,255,255,0.38)", strokeWidth: isActive("/") ? 2.2 : 1.7, transition: "color 0.18s" }} />
               </motion.div>
             </Link>
 
-            <Link to="/tribes" className="flex-1 h-[60px] flex justify-center items-center lg:flex-none lg:h-[56px] lg:w-full" style={{ textDecoration: "none" }}>
+            <Link to="/tribes" className="flex-1 h-[56px] flex justify-center items-center lg:flex-none lg:h-[56px] lg:w-full" style={{ textDecoration: "none" }}>
               <motion.div whileTap={{ scale: 0.82 }}>
                 <Users style={{ width: 25, height: 25, color: isActive("/tribes") ? "#fff" : "rgba(255,255,255,0.38)", strokeWidth: isActive("/tribes") ? 2.2 : 1.7, transition: "color 0.18s" }} />
               </motion.div>
             </Link>
 
-            <div className="flex-[1.4] h-[60px] flex justify-center items-center lg:flex-none lg:h-[56px] lg:w-full">
+            <div className="flex-[1.4] h-[56px] flex justify-center items-center lg:flex-none lg:h-[56px] lg:w-full">
               <Link to="/create" style={{ textDecoration: "none" }} onClick={() => navigator.vibrate?.(12)}>
                 <motion.div
                   className="fw-nav-create-btn"
@@ -161,7 +162,7 @@ export function Layout() {
               </Link>
             </div>
 
-            <Link to="/notifications" className="flex-1 h-[60px] flex justify-center items-center lg:flex-none lg:h-[56px] lg:w-full" style={{ textDecoration: "none" }}>
+            <Link to="/notifications" className="flex-1 h-[56px] flex justify-center items-center lg:flex-none lg:h-[56px] lg:w-full" style={{ textDecoration: "none" }}>
               <motion.div whileTap={{ scale: 0.82 }} style={{ position: "relative" }}>
                 <Bell style={{ width: 25, height: 25, color: isActive("/notifications") ? "#fff" : "rgba(255,255,255,0.38)", strokeWidth: isActive("/notifications") ? 2.2 : 1.7, transition: "color 0.18s" }} />
                 {unreadCount > 0 && (
@@ -174,7 +175,7 @@ export function Layout() {
               </motion.div>
             </Link>
 
-            <Link to="/profile" className="flex-1 h-[60px] flex justify-center items-center lg:flex-none lg:h-[56px] lg:w-full" style={{ textDecoration: "none" }}>
+            <Link to="/profile" className="flex-1 h-[56px] flex justify-center items-center lg:flex-none lg:h-[56px] lg:w-full" style={{ textDecoration: "none" }}>
               <motion.div whileTap={{ scale: 0.82 }}>
                 <Target style={{ width: 25, height: 25, color: isActive("/profile") ? "#fff" : "rgba(255,255,255,0.38)", strokeWidth: isActive("/profile") ? 2.2 : 1.7, transition: "color 0.18s" }} />
               </motion.div>

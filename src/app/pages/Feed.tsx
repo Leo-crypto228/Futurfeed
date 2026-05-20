@@ -77,6 +77,7 @@ function SubscriptionCard({ name, avatar, streak, objective, progress, followers
           <img
             src={avatar}
             alt=""
+            loading="lazy"
             onError={() => setImgFailed(true)}
             style={{
               width: "100%", height: "100%",
@@ -328,35 +329,45 @@ export function Feed() {
     if (location.pathname !== "/") return;
     setHeaderVisible(true);
     if (idleTimer.current) clearTimeout(idleTimer.current);
-    const scrollEl = document.querySelector("main") as HTMLElement | null;
+    const scrollEl = document.getElementById("app-scroll") as HTMLElement | null;
     if (scrollEl) scrollEl.scrollTop = 0;
     lastScrollY.current = 0;
   }, [location.pathname]);
 
   useEffect(() => {
-    const scrollEl = document.querySelector("main") as HTMLElement | null;
+    const scrollEl = document.getElementById("app-scroll") as HTMLElement | null;
     if (!scrollEl) return;
+
+    // Cumulative delta — iOS fires many tiny events (1-3px each), so we
+    // accumulate before deciding to show/hide. Direction flip resets the counter.
+    let cumDelta = 0;
+    let lastDir = 0; // +1 down, -1 up
 
     const onScroll = () => {
       const y = scrollEl.scrollTop;
       const delta = y - lastScrollY.current;
+      lastScrollY.current = y;
 
-      // Always visible at very top
-      if (y < 8) {
+      if (y < 10) {
         setHeaderVisible(true);
         if (idleTimer.current) clearTimeout(idleTimer.current);
-        lastScrollY.current = y;
+        cumDelta = 0; lastDir = 0;
         return;
       }
 
-      if (delta < -4) setHeaderVisible(true);      // scroll UP → show
-      else if (delta > 4) setHeaderVisible(false);  // scroll DOWN → hide
+      if (delta === 0) return;
+      const dir = delta > 0 ? 1 : -1;
+      if (dir !== lastDir) { cumDelta = 0; lastDir = dir; }
+      cumDelta += delta;
 
-      lastScrollY.current = y;
+      if (cumDelta < -25) { setHeaderVisible(true);  cumDelta = 0; }  // 25 px up  → show
+      else if (cumDelta > 45) { setHeaderVisible(false); cumDelta = 0; } // 45 px down → hide
 
-      // Auto-hide after 1.5s idle (only when not at top)
+      // Auto-hide after 2 s of no upward scroll (when scrolled down)
       if (idleTimer.current) clearTimeout(idleTimer.current);
-      idleTimer.current = setTimeout(() => setHeaderVisible(false), 1500);
+      idleTimer.current = setTimeout(() => {
+        if ((document.getElementById("app-scroll")?.scrollTop ?? 0) > 80) setHeaderVisible(false);
+      }, 2000);
     };
 
     scrollEl.addEventListener("scroll", onScroll, { passive: true });
@@ -679,8 +690,8 @@ export function Feed() {
               style={{
                 height: 44,
                 background: "rgba(255,255,255,0.07)",
-                backdropFilter: "blur(22px)",
-                WebkitBackdropFilter: "blur(22px)",
+                backdropFilter: "blur(12px)",
+                WebkitBackdropFilter: "blur(12px)",
                 border: "1px solid rgba(255,255,255,0.12)",
                 boxShadow: "0 4px 18px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.09)",
                 borderRadius: hasAutocomplete ? "22px 22px 0 0" : "22px",
@@ -890,7 +901,7 @@ export function Feed() {
             {filteredFollowingPosts.length > 0 && (
               <>
                 {filteredFollowingPosts.map((post, i) => (
-                  <motion.div key={post.id} initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04, duration: 0.26 }}>
+                  <motion.div key={post.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.18 }}>
                     <ProgressCard
                       postId={post.id} user={post.user} streak={post.streak}
                       authorUsername={post.username}
@@ -969,7 +980,7 @@ export function Feed() {
 
             
               {displayedFeedPosts.map((post, i) => (
-                <motion.div key={post.id ?? `demo-${i}`} initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04, duration: 0.26 }}>
+                <motion.div key={post.id ?? `demo-${i}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.18 }}>
                   {i === 0 && post.username === currentUserId && currentUserId !== "" && (
                     <div style={{ padding: "0 18px 5px", display: "flex", alignItems: "center", gap: 6 }}>
                       <Wifi style={{ width: 10, height: 10, color: "#818cf8" }} />

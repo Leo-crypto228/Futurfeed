@@ -610,7 +610,7 @@ export function ProgressCard({
   useEffect(() => {
     if (!postId) return;
     const mountIndex = _cardMountCounter++;
-    const staggerMs = Math.min(mountIndex * 80, 1200) + Math.random() * 60;
+    const staggerMs = Math.min(mountIndex * 30, 300) + Math.random() * 20;
     const timer = setTimeout(() => {
       getPostReactions(postId, currentUserId)
         .then(({ myReaction, total }) => {
@@ -806,7 +806,7 @@ export function ProgressCard({
         <div style={{ flexShrink: 0 }} onClick={handleUserClick}>
           <div style={{ width: 42, height: 42, borderRadius: "50%", overflow: "hidden", border: "2px solid rgba(99,102,241,0.28)", cursor: "pointer", flexShrink: 0 }}>
             {liveAvatar ? (
-              <img src={liveAvatar} alt={user?.name || ""} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              <img src={liveAvatar} alt={user?.name || ""} loading="lazy" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
             ) : (
               <div style={{ width: "100%", height: "100%", background: "linear-gradient(135deg,#4f46e5,#a78bfa)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 600, fontSize: 14 }}>
                 {(user?.name || "??").substring(0, 2).toUpperCase()}
@@ -892,13 +892,11 @@ export function ProgressCard({
     <>
       {showPostMenu && <div className="fixed inset-0 z-40" onClick={() => setShowPostMenu(false)} />}
 
-      <div className={hasImages ? "relative sm:mx-3" : "mx-3 relative"}>
+      <div className={hasImages ? "relative sm:mx-3" : "mx-3 relative"} style={{ contain: "layout" }}>
         <motion.div
           className={`cursor-pointer relative overflow-hidden ${hasImages ? "rounded-none sm:rounded-[20px]" : "rounded-[20px]"}`}
-          style={{
-            background: "#000",
-          }}
-          initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}
+          style={{ background: "#000" }}
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.15 }}
           onClick={handleCardClick}
           ref={cardRef}
         >
