@@ -109,6 +109,17 @@ export function Layout() {
         }}
       />
       <FcoinNotificationWatcher />
+
+      {/* ── Global status bar band — always covers Dynamic Island / notch on ALL pages ── */}
+      <div aria-hidden style={{
+        position: "fixed", top: 0, left: 0, right: 0,
+        height: "env(safe-area-inset-top, 0px)",
+        background: "#000",
+        borderBottom: "0.5px solid #1a1a1a",
+        zIndex: 200,
+        pointerEvents: "none",
+      }} />
+
       <main
         id="app-scroll"
         className={`flex-1 overflow-y-auto overflow-x-hidden${hideNav ? "" : " fw-main"}`}

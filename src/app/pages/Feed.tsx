@@ -303,28 +303,15 @@ export function Feed() {
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const headerRef = useRef<HTMLDivElement>(null);
   const [headerH, setHeaderH] = useState(0);
-  const tabsRef = useRef<HTMLDivElement>(null);
-  const [tabsH, setTabsH] = useState(48);
-
   useEffect(() => {
     if (!headerRef.current) return;
     const ro = new ResizeObserver((entries) => {
       for (const e of entries) {
-        // borderBoxSize includes padding (safe-area-inset-top) — gives true rendered height
-        const h = e.borderBoxSize?.[0]?.blockSize ?? e.contentRect.height;
+        const h = e.contentRect.height;
         setHeaderH(Math.round(h) + 1);
       }
     });
     ro.observe(headerRef.current);
-    return () => ro.disconnect();
-  }, []);
-
-  useEffect(() => {
-    if (!tabsRef.current) return;
-    const ro = new ResizeObserver((entries) => {
-      for (const e of entries) setTabsH(e.contentRect.height);
-    });
-    ro.observe(tabsRef.current);
     return () => ro.disconnect();
   }, []);
 
@@ -662,11 +649,11 @@ export function Feed() {
       <motion.div
         ref={headerRef}
         className="fixed left-0 right-0 z-10 bg-background border-b border-white/5"
-        style={{ top: 0 }}
-        animate={{ y: headerVisible ? 0 : -(Math.max(0, (headerH || 165) - tabsH)) }}
-        transition={{ type: "spring", stiffness: 420, damping: 38, mass: 0.8 }}
+        style={{ top: "env(safe-area-inset-top, 0px)" }}
+        animate={{ y: headerVisible ? 0 : -(headerH || 165) }}
+        transition={{ duration: 0.25, ease: "easeOut" }}
       >
-        <div className="max-w-2xl mx-auto px-3 pb-0" style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 14px)" }}>
+        <div className="max-w-2xl mx-auto px-3 pb-0" style={{ paddingTop: "14px" }}>
 
           {/* Row 1: logo centré */}
           <div className="flex items-center justify-center mb-3">
@@ -747,9 +734,9 @@ export function Feed() {
 
         </div>{/* end logoSearchRef — tabs intentionnellement hors de ce div */}
 
-        {/* Row 3: Tabs — reste visible quand le header se cache */}
+        {/* Row 3: Tabs — disparaît avec le header en scrollant */}
         <div className="max-w-2xl mx-auto px-3">
-          <div ref={tabsRef} className="flex">
+          <div className="flex">
             {TABS.map((tab) => (
               <button
                 key={tab}
