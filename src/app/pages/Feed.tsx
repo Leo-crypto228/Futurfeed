@@ -297,10 +297,9 @@ export function Feed() {
   const { followedList, currentUserId } = useFollow();
   const { user: authUser } = useAuth();
 
-  // ── Scroll-aware header ────────────────────────────────────────────────────
+  // ── Scroll-aware header (+ nav via custom event) ──────────────────────────
   const [headerVisible, setHeaderVisible] = useState(true);
   const lastScrollY = useRef(0);
-  const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const headerRef = useRef<HTMLDivElement>(null);
   const [headerH, setHeaderH] = useState(0);
   useEffect(() => {
@@ -320,7 +319,6 @@ export function Feed() {
   useEffect(() => {
     if (location.pathname !== "/") return;
     setHeaderVisible(true);
-    if (idleTimer.current) clearTimeout(idleTimer.current);
     const scrollEl = document.getElementById("app-scroll") as HTMLElement | null;
     try {
       const savedStr = sessionStorage.getItem("ff:feedScroll");
@@ -343,43 +341,39 @@ export function Feed() {
     const scrollEl = document.getElementById("app-scroll") as HTMLElement | null;
     if (!scrollEl) return;
 
-    // Cumulative delta — iOS fires many tiny events (1-3px each), so we
-    // accumulate before deciding to show/hide. Direction flip resets the counter.
-    let cumDelta = 0;
+    // 8 px accumulation buffer — safe on iOS where each event is only 1-3 px.
+    // Direction flip resets the buffer so only intentional scrolls trigger.
+    let buf = 0;
     let lastDir = 0; // +1 down, -1 up
+
+    // Single source of truth: update header state AND notify Layout's nav in
+    // the same synchronous call → React batches both into one render frame.
+    const setVisible = (visible: boolean) => {
+      setHeaderVisible(visible);
+      window.dispatchEvent(new CustomEvent("fowards:feedScroll", { detail: { visible } }));
+    };
 
     const onScroll = () => {
       const y = scrollEl.scrollTop;
       const delta = y - lastScrollY.current;
       lastScrollY.current = y;
 
-      if (y < 10) {
-        setHeaderVisible(true);
-        if (idleTimer.current) clearTimeout(idleTimer.current);
-        cumDelta = 0; lastDir = 0;
-        return;
-      }
-
+      // Back at very top → always show
+      if (y < 8) { buf = 0; lastDir = 0; setVisible(true); return; }
       if (delta === 0) return;
-      const dir = delta > 0 ? 1 : -1;
-      if (dir !== lastDir) { cumDelta = 0; lastDir = dir; }
-      cumDelta += delta;
 
-      if (cumDelta < -25) { setHeaderVisible(true);  cumDelta = 0; }  // 25 px up  → show
-      else if (cumDelta > 45) { setHeaderVisible(false); cumDelta = 0; } // 45 px down → hide
+      const dir = delta > 0 ? 1 : -1; // +1 = scrolling down, -1 = scrolling up
+      if (dir !== lastDir) { buf = 0; lastDir = dir; } // direction flip → reset buffer
+      buf += Math.abs(delta);
 
-      // Auto-hide after 2 s of no upward scroll (when scrolled down)
-      if (idleTimer.current) clearTimeout(idleTimer.current);
-      idleTimer.current = setTimeout(() => {
-        if ((document.getElementById("app-scroll")?.scrollTop ?? 0) > 80) setHeaderVisible(false);
-      }, 2000);
+      if (buf >= 8) { // 8 px threshold reached
+        setVisible(dir < 0); // up → show (true), down → hide (false)
+        buf = 0;
+      }
     };
 
     scrollEl.addEventListener("scroll", onScroll, { passive: true });
-    return () => {
-      scrollEl.removeEventListener("scroll", onScroll);
-      if (idleTimer.current) clearTimeout(idleTimer.current);
-    };
+    return () => scrollEl.removeEventListener("scroll", onScroll);
   }, []);
 
   // Utiliser les vraies données de l'utilisateur connecté
@@ -666,7 +660,7 @@ export function Feed() {
         className="fixed left-0 right-0 z-10 bg-background border-b border-white/5"
         style={{ top: "env(safe-area-inset-top, 0px)" }}
         animate={{ y: headerVisible ? 0 : -(headerH || 165) }}
-        transition={{ duration: 0.25, ease: "easeOut" }}
+        transition={{ duration: 0.2, ease: "easeOut" }}
       >
         <div className="max-w-2xl mx-auto px-3 pb-0" style={{ paddingTop: "14px" }}>
 

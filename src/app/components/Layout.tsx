@@ -3,7 +3,7 @@ import { Home, Users, Target, Loader2, Plus, Bell } from "lucide-react";
 import { useNotifications } from "../context/NotificationContext";
 import { motion } from "motion/react";
 import { Toaster } from "sonner";
-import { useEffect, useState, useRef, Suspense } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useProgression } from "../context/ProgressionContext";
 import { useAuth } from "../context/AuthContext";
 import { useActiveCommunity } from "../context/ActiveCommunityContext";
@@ -50,41 +50,23 @@ export function Layout() {
   const [createPostOpen, setCreatePostOpen] = useState(false);
   const { unreadCount } = useNotifications();
 
-  // ── Scroll-aware nav bar ───────────────────────────────────────────────────
+  // ── Nav visibility — driven by Feed's scroll logic via custom event ────────
+  // Only the feed page hides the nav. All other pages keep it fully visible.
   const [navVisible, setNavVisible] = useState(true);
-  const lastNavScrollY = useRef(0);
 
-  // Reset nav visibility on every route change
+  // Reset to visible on every route change (leaving the feed → nav comes back)
   useEffect(() => {
     setNavVisible(true);
-    lastNavScrollY.current = 0;
   }, [location.pathname]);
 
-  // Cumulative-delta scroll listener — same thresholds as Feed header
+  // Mirror Feed's header visibility: same event, same React render batch
   useEffect(() => {
-    if (!user || hideNav) return;
-    const scrollEl = document.getElementById("app-scroll") as HTMLElement | null;
-    if (!scrollEl) return;
-
-    let cumDelta = 0;
-    let lastDir = 0;
-
-    const onScroll = () => {
-      const y = scrollEl.scrollTop;
-      const delta = y - lastNavScrollY.current;
-      lastNavScrollY.current = y;
-      if (y < 10) { setNavVisible(true); cumDelta = 0; lastDir = 0; return; }
-      if (delta === 0) return;
-      const dir = delta > 0 ? 1 : -1;
-      if (dir !== lastDir) { cumDelta = 0; lastDir = dir; }
-      cumDelta += delta;
-      if (cumDelta < -25) { setNavVisible(true);  cumDelta = 0; }
-      else if (cumDelta > 45) { setNavVisible(false); cumDelta = 0; }
+    const handler = (e: Event) => {
+      setNavVisible((e as CustomEvent<{ visible: boolean }>).detail.visible);
     };
-
-    scrollEl.addEventListener("scroll", onScroll, { passive: true });
-    return () => scrollEl.removeEventListener("scroll", onScroll);
-  }, [user, hideNav]);
+    window.addEventListener("fowards:feedScroll", handler);
+    return () => window.removeEventListener("fowards:feedScroll", handler);
+  }, []);
 
 
 
@@ -184,7 +166,7 @@ export function Layout() {
           }}
           initial={{ opacity: 0, y: 0 }}
           animate={{ opacity: 1, y: navVisible ? 0 : 80 }}
-          transition={{ duration: 0.25, ease: "easeOut" }}
+          transition={{ duration: 0.2, ease: "easeOut" }}
         >
           <div className="w-full max-w-[672px] flex items-center lg:flex-col lg:max-w-none lg:gap-4">
 
