@@ -15,6 +15,7 @@ import {
 import { useProgression } from "../context/ProgressionContext";
 import { useObjectiveProgress } from "../context/ObjectiveProgressContext";
 import { toast } from "sonner";
+import { StreakBadge } from "../components/StreakBadge";
 
 import { projectId, publicAnonKey } from "/utils/supabase/info";
 

@@ -643,8 +643,6 @@ function ProfileNavBar({ active, onChange }: { active: ProfileTab; onChange: (t:
 
 function PostsSection() {
   const navigate = useNavigate();
-  const [mode, setMode] = useState<PostMode>("tout");
-  const [trierOpen, setTrierOpen] = useState(false);
   const { savedPosts } = useSavedPosts();
 
   // ── Mes publications API ─────────────────────────────────────────────────
@@ -682,14 +680,6 @@ function PostsSection() {
 
 
 
-  // Les posts affichés sous les filtres sont maintenant basés sur les vrais posts API
-  // (plus de données mock dans la section filtrée — fiabilité et cohérence garanties)
-  const displayedPosts = (() => {
-    if (mode === "impactant") return MY_POSTS.filter((p) => p.isImpactant);
-    if (mode === "riposte")   return RIPOSTES;
-    if (mode === "reponses")  return REPLIES;
-    return MY_POSTS; // "tout" — legacy mock conservé pour la démonstration des réponses/ripostes
-  })();
 
   return (
     <div>
@@ -818,261 +808,57 @@ function PostsSection() {
           ))}
         
 
-        {/* Séparateur */}
-        {apiPosts.length > 0 && (
-          <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "8px 0 18px" }}>
-            <div style={{ flex: 1, height: "0.5px", background: "rgba(255,255,255,0.06)" }} />
-            <span style={{ fontSize: 10, color: "rgba(255,255,255,0.18)", fontWeight: 600, letterSpacing: "0.05em" }}>ARCHIVES</span>
-            <div style={{ flex: 1, height: "0.5px", background: "rgba(255,255,255,0.06)" }} />
-          </div>
-        )}
       </div>
 
-      {/* Filter bar — capsules indépendantes alignées à gauche */}
-      <div style={{ marginBottom: 14, position: "relative" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-
-          {/* Trier dropdown capsule */}
-          <div style={{ position: "relative" }}>
-            <motion.button
-              whileTap={{ scale: 0.93 }}
-              onClick={() => setTrierOpen((v) => !v)}
-              style={{
-                borderRadius: 999,
-                padding: "7px 13px",
-                background: (mode === "tout" || mode === "reponses") ? "rgba(255,255,255,0.14)" : "rgba(255,255,255,0.08)",
-                border: (mode === "tout" || mode === "reponses") ? "0.5px solid rgba(255,255,255,0.22)" : "0.5px solid rgba(255,255,255,0.14)",
-                color: (mode === "tout" || mode === "reponses") ? "rgba(255,255,255,0.90)" : "rgba(255,255,255,0.60)",
-                fontSize: 13,
-                fontWeight: 600,
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                gap: 5,
-                whiteSpace: "nowrap",
-                backdropFilter: "blur(16px)",
-                WebkitBackdropFilter: "blur(16px)",
-              }}
-            >
-              {mode === "reponses" ? "Réponses" : "Trier"}
-              <ChevronDown
-                style={{
-                  width: 13, height: 13,
-                  transform: trierOpen ? "rotate(180deg)" : "rotate(0deg)",
-                  transition: "transform 0.2s",
-                  opacity: 0.7,
-                }}
-              />
-            </motion.button>
-
-            {/* Dropdown */}
-            
-              {trierOpen && (
-                <motion.div
-                  initial={{ opacity: 0, y: -6, scale: 0.95 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  transition={{ duration: 0.15 }}
-                  style={{
-                    position: "absolute",
-                    top: "calc(100% + 6px)",
-                    left: 0,
-                    zIndex: 300,
-                    background: "rgba(14,14,22,0.97)",
-                    backdropFilter: "blur(28px)",
-                    WebkitBackdropFilter: "blur(28px)",
-                    border: "0.5px solid rgba(255,255,255,0.12)",
-                    borderRadius: 16,
-                    overflow: "hidden",
-                    boxShadow: "0 12px 40px rgba(0,0,0,0.70)",
-                    minWidth: 150,
-                  }}
-                >
-                  {[
-                    { key: "tout" as PostMode, label: "Tout" },
-                    { key: "reponses" as PostMode, label: "Réponses" },
-                  ].map((opt, i) => (
-                    <button
-                      key={opt.key}
-                      onClick={() => { setMode(opt.key); setTrierOpen(false); }}
-                      style={{
-                        display: "block",
-                        width: "100%",
-                        padding: "13px 18px",
-                        background: mode === opt.key ? "rgba(99,102,241,0.14)" : "transparent",
-                        border: "none",
-                        borderBottom: i === 0 ? "0.5px solid rgba(255,255,255,0.07)" : "none",
-                        textAlign: "left",
-                        cursor: "pointer",
-                        color: mode === opt.key ? "#a5b4fc" : "rgba(240,240,245,0.72)",
-                        fontSize: 14,
-                        fontWeight: mode === opt.key ? 700 : 500,
-                      }}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </motion.div>
-              )}
-            
+      {/* Posts enregistrés — section privée toujours visible */}
+      {savedPosts.length > 0 && (
+        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.22 }} style={{ marginTop: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderRadius: 14, marginBottom: 14, background: "rgba(99,102,241,0.08)", border: "0.5px solid rgba(99,102,241,0.20)" }}>
+            <Lock style={{ width: 13, height: 13, color: "rgba(165,180,252,0.70)", flexShrink: 0 }} />
+            <p style={{ fontSize: 12, color: "rgba(165,180,252,0.65)", margin: 0 }}>
+              Posts enregistrés — visible uniquement par vous.
+            </p>
           </div>
-
-          {/* Impactant capsule */}
-          <motion.button
-            whileTap={{ scale: 0.93 }}
-            onClick={() => setMode("impactant")}
-            style={{
-              borderRadius: 999,
-              padding: "7px 14px",
-              background: mode === "impactant" ? "rgba(255,255,255,0.14)" : "rgba(255,255,255,0.08)",
-              border: mode === "impactant" ? "0.5px solid rgba(255,255,255,0.22)" : "0.5px solid rgba(255,255,255,0.14)",
-              color: mode === "impactant" ? "rgba(255,255,255,0.90)" : "rgba(255,255,255,0.60)",
-              fontSize: 13,
-              fontWeight: mode === "impactant" ? 700 : 500,
-              cursor: "pointer",
-              whiteSpace: "nowrap",
-              backdropFilter: "blur(16px)",
-              WebkitBackdropFilter: "blur(16px)",
-            }}
-          >
-            Impactant
-          </motion.button>
-
-          {/* Riposte capsule */}
-          <motion.button
-            whileTap={{ scale: 0.93 }}
-            onClick={() => setMode("riposte")}
-            style={{
-              borderRadius: 999,
-              padding: "7px 14px",
-              background: mode === "riposte" ? "rgba(255,255,255,0.14)" : "rgba(255,255,255,0.08)",
-              border: mode === "riposte" ? "0.5px solid rgba(255,255,255,0.22)" : "0.5px solid rgba(255,255,255,0.14)",
-              color: mode === "riposte" ? "rgba(255,255,255,0.90)" : "rgba(255,255,255,0.60)",
-              fontSize: 13,
-              fontWeight: mode === "riposte" ? 700 : 500,
-              cursor: "pointer",
-              whiteSpace: "nowrap",
-              backdropFilter: "blur(16px)",
-              WebkitBackdropFilter: "blur(16px)",
-            }}
-          >
-            Riposte
-          </motion.button>
-
-          {/* Important capsule */}
-          <motion.button
-            whileTap={{ scale: 0.93 }}
-            onClick={() => setMode("important")}
-            style={{
-              borderRadius: 999,
-              padding: "7px 14px",
-              background: mode === "important" ? "rgba(255,255,255,0.14)" : "rgba(255,255,255,0.08)",
-              border: mode === "important" ? "0.5px solid rgba(255,255,255,0.22)" : "0.5px solid rgba(255,255,255,0.14)",
-              color: mode === "important" ? "rgba(255,255,255,0.90)" : "rgba(255,255,255,0.60)",
-              fontSize: 13,
-              fontWeight: mode === "important" ? 700 : 500,
-              cursor: "pointer",
-              whiteSpace: "nowrap",
-              backdropFilter: "blur(16px)",
-              WebkitBackdropFilter: "blur(16px)",
-              display: "flex",
-              alignItems: "center",
-              gap: 5,
-            }}
-          >
-            <Bookmark style={{ width: 12, height: 12, strokeWidth: 2 }} />
-            Important
-            {savedPosts.length > 0 && (
-              <span style={{
-                display: "inline-flex", alignItems: "center", justifyContent: "center",
-                minWidth: 18, height: 18, borderRadius: 999, padding: "0 4px",
-                background: mode === "important" ? "rgba(255,255,255,0.22)" : "rgba(255,255,255,0.18)",
-                fontSize: 10, fontWeight: 800,
-                color: mode === "important" ? "rgba(255,255,255,0.90)" : "rgba(255,255,255,0.70)",
-              }}>{savedPosts.length}</span>
-            )}
-          </motion.button>
-        </div>
-      </div>
-
-      {trierOpen && <div style={{ position: "fixed", inset: 0, zIndex: 150 }} onClick={() => setTrierOpen(false)} />}
-
-      {/* Posts list OR Important section */}
-      
-        {mode === "important" ? (
-          <motion.div key="important" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.22 }}>
-            {/* Private notice */}
-            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderRadius: 14, marginBottom: 14, background: "rgba(99,102,241,0.08)", border: "0.5px solid rgba(99,102,241,0.20)" }}>
-              <Lock style={{ width: 13, height: 13, color: "rgba(165,180,252,0.70)", flexShrink: 0 }} />
-              <p style={{ fontSize: 12, color: "rgba(165,180,252,0.65)", margin: 0 }}>
-                Cette section est privée — visible uniquement par vous.
-              </p>
-            </div>
-
-            {savedPosts.length === 0 ? (
-              <div style={{ textAlign: "center", padding: "48px 0 32px" }}>
-                <Bookmark style={{ width: 32, height: 32, color: "rgba(255,255,255,0.14)", margin: "0 auto 12px", display: "block" }} />
-                <p style={{ fontSize: 14, color: "rgba(144,144,168,0.40)" }}>Aucun post enregistré.</p>
-                <p style={{ fontSize: 12, color: "rgba(144,144,168,0.28)", marginTop: 4 }}>Appuyez sur l'icône marque-page d'un post pour l'enregistrer ici.</p>
-              </div>
-            ) : (
-              <div>
-                {savedPosts.map((sp, i) => (
-                  <motion.div key={sp.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
-                    style={{ background: "#0d0d0d", borderRadius: 18, marginBottom: 10, overflow: "hidden", border: "0.5px solid rgba(255,255,255,0.08)", position: "relative" }}
-                  >
-                    {/* Bookmark date badge */}
-                    <div style={{ position: "absolute", top: 12, right: 12, zIndex: 2, display: "flex", alignItems: "center", gap: 4 }}>
-                      <Bookmark style={{ width: 11, height: 11, color: "#818cf8", fill: "#818cf8" }} />
-                      <span style={{ fontSize: 10, color: "rgba(129,140,248,0.70)", fontWeight: 600 }}>
-                        {sp.savedAt.toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}
-                      </span>
+          <div>
+            {savedPosts.map((sp, i) => (
+              <motion.div key={sp.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
+                style={{ background: "#0d0d0d", borderRadius: 18, marginBottom: 10, overflow: "hidden", border: "0.5px solid rgba(255,255,255,0.08)", position: "relative" }}
+              >
+                <div style={{ position: "absolute", top: 12, right: 12, zIndex: 2, display: "flex", alignItems: "center", gap: 4 }}>
+                  <Bookmark style={{ width: 11, height: 11, color: "#818cf8", fill: "#818cf8" }} />
+                  <span style={{ fontSize: 10, color: "rgba(129,140,248,0.70)", fontWeight: 600 }}>
+                    {sp.savedAt.toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}
+                  </span>
+                </div>
+                <div style={{ padding: "14px 16px 12px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                    <div style={{ width: 40, height: 40, borderRadius: "50%", overflow: "hidden", border: "1.5px solid rgba(99,102,241,0.22)", flexShrink: 0 }}>
+                      <img src={sp.post.user.avatar} alt={sp.post.user.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                     </div>
-
-                    <div style={{ padding: "14px 16px 12px" }}>
-                      {/* Author */}
-                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-                        <div style={{ width: 40, height: 40, borderRadius: "50%", overflow: "hidden", border: "1.5px solid rgba(99,102,241,0.22)", flexShrink: 0 }}>
-                          <img src={sp.post.user.avatar} alt={sp.post.user.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                        </div>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <p style={{ fontSize: 14, fontWeight: 700, color: "rgba(255,255,255,0.88)", margin: 0 }}>{sp.post.user.name}</p>
-                          <p style={{ fontSize: 12, color: "rgba(255,255,255,0.35)", margin: "2px 0 0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sp.post.user.objective}</p>
-                        </div>
-                      </div>
-                      {/* Type boudin */}
-                      <div style={{ marginBottom: 8 }}>
-                        <span style={{ display: "inline-block", background: "rgba(255,255,255,0.92)", borderRadius: 999, padding: "2px 10px", fontSize: 11, fontWeight: 700, color: "#111" }}>
-                          {TYPE_LABELS[sp.post.progress.type as PostType] ?? sp.post.progress.type}
-                        </span>
-                      </div>
-                      {/* Text */}
-                      <p style={{ fontSize: 14, color: "rgba(235,235,245,0.82)", lineHeight: 1.55, margin: 0, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical" as const, overflow: "hidden" }}>
-                        {sp.post.progress.description}
-                      </p>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ fontSize: 14, fontWeight: 700, color: "rgba(255,255,255,0.88)", margin: 0 }}>{sp.post.user.name}</p>
+                      <p style={{ fontSize: 12, color: "rgba(255,255,255,0.35)", margin: "2px 0 0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sp.post.user.objective}</p>
                     </div>
-
-                    {sp.post.image && (
-                      <div style={{ width: "100%", height: 140, overflow: "hidden" }}>
-                        <img src={sp.post.image} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-                      </div>
-                    )}
-                  </motion.div>
-                ))}
-              </div>
-            )}
-          </motion.div>
-        ) : (
-          <motion.div key={mode} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.22 }}>
-            {displayedPosts.length === 0 ? (
-              <div style={{ textAlign: "center", padding: "40px 0", color: "rgba(144,144,168,0.40)", fontSize: 14 }}>
-                Aucun contenu ici pour l'instant.
-              </div>
-            ) : (
-              displayedPosts.map((post) => <ProfilePostAdapter key={post.id} post={post} />)
-            )}
-          </motion.div>
-        )}
-      
+                  </div>
+                  <div style={{ marginBottom: 8 }}>
+                    <span style={{ display: "inline-block", background: "rgba(255,255,255,0.92)", borderRadius: 999, padding: "2px 10px", fontSize: 11, fontWeight: 700, color: "#111" }}>
+                      {TYPE_LABELS[sp.post.progress.type as PostType] ?? sp.post.progress.type}
+                    </span>
+                  </div>
+                  <p style={{ fontSize: 14, color: "rgba(235,235,245,0.82)", lineHeight: 1.55, margin: 0, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical" as const, overflow: "hidden" }}>
+                    {sp.post.progress.description}
+                  </p>
+                </div>
+                {sp.post.image && (
+                  <div style={{ width: "100%", height: 140, overflow: "hidden" }}>
+                    <img src={sp.post.image} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                  </div>
+                )}
+              </motion.div>
+            ))}
+          </div>
+        </motion.div>
+      )}
     </div>
   );
 }

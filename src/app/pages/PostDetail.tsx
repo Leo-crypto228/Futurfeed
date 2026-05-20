@@ -32,6 +32,7 @@ import {
 import { stripAt, renderPostText, extractHashtagsFromText } from "../utils/renderText";
 import { GifPicker, GifMessage, isGifUrl } from "../components/GifPicker";
 import { fetchAuthorGoalProgress, getCachedGoalProgress } from "../api/goalProgressCache";
+import { getUserCommunities } from "../api/communityMembersApi";
 
 /* ─── Video-comment quota (2 per rolling 5 days, non-cumulative) ──────────── */
 const VC_KEY = "ff:vc_quota";
@@ -118,13 +119,6 @@ const PERTINENT_USERS = [
   { id: 7, name: "Chloé Bernard",    avatar: "https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=80" },
 ];
 
-const SHARE_COMMUNITIES = [
-  { id: "1", name: "Créateurs SaaS",       avatar: "https://images.unsplash.com/photo-1563461660947-507ef49e9c47?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=80", members: 245 },
-  { id: "2", name: "Runners du matin",     avatar: "https://images.unsplash.com/photo-1706029831332-67734fbf73d9?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=80", members: 562 },
-  { id: "3", name: "Investisseurs FR",     avatar: "https://images.unsplash.com/photo-1660970781103-ba6749cb9ce3?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=80", members: 318 },
-  { id: "4", name: "Builders Indé",        avatar: "https://images.unsplash.com/photo-1760611656615-db3fad24a314?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=80", members: 189 },
-  { id: "5", name: "Créateurs de contenu", avatar: "https://images.unsplash.com/photo-1627667050609-d4ba6483a368?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=80", members: 421 },
-];
 
 // MY_AVATAR est résolu dynamiquement dans le composant (voir myUserAvatar)
 const EMOJI_LIST = ["😊","🔥","💪","🚀","✨","👏","💡","🎯","⚡","💎","🙌","❤️","😎","🏆","💯","🌟","😤","👍","🤝","💫"];
@@ -951,6 +945,32 @@ function SharePanel({
   const [sharing, setSharing] = useState(false);
   const [shared, setShared] = useState<string | null>(null);
   const [shareError, setShareError] = useState<string | null>(null);
+  const [communities, setCommunities] = useState<Array<{ id: string; name: string; avatar: string; members: number }>>([]);
+  const [loadingCommunities, setLoadingCommunities] = useState(true);
+
+  useEffect(() => {
+    if (!currentUserId) return;
+    const BASE = `https://${projectId}.supabase.co/functions/v1/make-server-218684af`;
+    setLoadingCommunities(true);
+    Promise.all([
+      getUserCommunities(currentUserId),
+      fetch(`${BASE}/communities`, { headers: { Authorization: `Bearer ${publicAnonKey}` } })
+        .then(r => r.ok ? r.json() : { communities: [] })
+        .then(d => Array.isArray(d.communities) ? d.communities : []),
+    ])
+      .then(([userCommunityIds, allCommunities]) => {
+        const joined = (allCommunities as any[])
+          .filter(c => userCommunityIds.includes(String(c.id)))
+          .map(c => {
+            const raw: string = c.avatar ?? "";
+            const avatar = raw.startsWith("http") ? raw : raw ? `https://${projectId}.supabase.co/storage/v1/object/public/${raw}` : "";
+            return { id: String(c.id), name: c.name ?? "Communauté", avatar, members: typeof c.members === "number" ? c.members : 0 };
+          });
+        setCommunities(joined);
+      })
+      .catch(() => setCommunities([]))
+      .finally(() => setLoadingCommunities(false));
+  }, [currentUserId]);
 
   const handleSelectCommunity = (id: string) => {
     setSelectedCommunity(id === selectedCommunity ? null : id);
@@ -959,7 +979,7 @@ function SharePanel({
 
   const handleShare = async () => {
     if (!selectedCommunity || sharing) return;
-    const community = SHARE_COMMUNITIES.find(c => c.id === selectedCommunity);
+    const community = communities.find(c => c.id === selectedCommunity);
     if (!community) return;
     setSharing(true);
     setShareError(null);
@@ -1043,22 +1063,37 @@ function SharePanel({
 
       {/* Communities */}
       <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 16 }}>
-        {SHARE_COMMUNITIES.map((c, i) => {
-          const isSelected = selectedCommunity === c.id;
-          const isDone = shared === c.id;
-          return (
-            <motion.button key={c.id} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.05 }} whileTap={{ scale: 0.97 }}
-              onClick={() => handleSelectCommunity(c.id)}
-              style={{ display: "flex", alignItems: "center", gap: 14, padding: "11px 14px", borderRadius: 16, background: isDone ? "rgba(34,197,94,0.10)" : isSelected ? "rgba(99,102,241,0.14)" : "rgba(255,255,255,0.04)", border: isDone ? "0.5px solid rgba(34,197,94,0.35)" : isSelected ? "0.5px solid rgba(99,102,241,0.40)" : "0.5px solid rgba(255,255,255,0.07)", cursor: "pointer", transition: "all 0.2s", width: "100%", textAlign: "left" }}
-            >
-              <div style={{ width: 42, height: 42, borderRadius: "50%", overflow: "hidden", flexShrink: 0, border: isSelected ? "1.5px solid rgba(99,102,241,0.45)" : "1.5px solid rgba(99,102,241,0.18)" }}>
-                <img src={c.avatar} alt={c.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-              </div>
-              <div style={{ flex: 1 }}>
-                <p style={{ fontSize: 14, fontWeight: 600, color: isDone ? "#86efac" : isSelected ? "#c7d2fe" : "rgba(255,255,255,0.88)", margin: 0 }}>{c.name}</p>
-                <p style={{ fontSize: 11, color: "rgba(255,255,255,0.30)", margin: "2px 0 0" }}>{c.members} membres</p>
-              </div>
-              
+        {loadingCommunities ? (
+          <div style={{ display: "flex", justifyContent: "center", padding: "18px 0" }}>
+            <motion.div animate={{ rotate: 360 }} transition={{ duration: 0.8, repeat: Infinity, ease: "linear" }} style={{ width: 22, height: 22, border: "2px solid rgba(99,102,241,0.20)", borderTopColor: "#a5b4fc", borderRadius: "50%" }} />
+          </div>
+        ) : communities.length === 0 ? (
+          <div style={{ padding: "18px 14px", borderRadius: 14, background: "rgba(255,255,255,0.04)", border: "0.5px solid rgba(255,255,255,0.07)", textAlign: "center" }}>
+            <p style={{ fontSize: 13, color: "rgba(255,255,255,0.35)", margin: 0 }}>Tu n'as rejoint aucune tribu pour l'instant.</p>
+            <p style={{ fontSize: 12, color: "rgba(255,255,255,0.22)", margin: "6px 0 0" }}>Rejoins une tribu pour pouvoir partager des posts.</p>
+          </div>
+        ) : (
+          communities.map((c, i) => {
+            const isSelected = selectedCommunity === c.id;
+            const isDone = shared === c.id;
+            return (
+              <motion.button key={c.id} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.05 }} whileTap={{ scale: 0.97 }}
+                onClick={() => handleSelectCommunity(c.id)}
+                style={{ display: "flex", alignItems: "center", gap: 14, padding: "11px 14px", borderRadius: 16, background: isDone ? "rgba(34,197,94,0.10)" : isSelected ? "rgba(99,102,241,0.14)" : "rgba(255,255,255,0.04)", border: isDone ? "0.5px solid rgba(34,197,94,0.35)" : isSelected ? "0.5px solid rgba(99,102,241,0.40)" : "0.5px solid rgba(255,255,255,0.07)", cursor: "pointer", transition: "all 0.2s", width: "100%", textAlign: "left" }}
+              >
+                <div style={{ width: 42, height: 42, borderRadius: "50%", overflow: "hidden", flexShrink: 0, border: isSelected ? "1.5px solid rgba(99,102,241,0.45)" : "1.5px solid rgba(99,102,241,0.18)" }}>
+                  {c.avatar ? (
+                    <img src={c.avatar} alt={c.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  ) : (
+                    <div style={{ width: "100%", height: "100%", background: "rgba(99,102,241,0.20)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <span style={{ fontSize: 16 }}>👥</span>
+                    </div>
+                  )}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <p style={{ fontSize: 14, fontWeight: 600, color: isDone ? "#86efac" : isSelected ? "#c7d2fe" : "rgba(255,255,255,0.88)", margin: 0 }}>{c.name}</p>
+                  <p style={{ fontSize: 11, color: "rgba(255,255,255,0.30)", margin: "2px 0 0" }}>{c.members} membres</p>
+                </div>
                 {isDone ? (
                   <motion.div key="done" initial={{ scale: 0 }} animate={{ scale: 1 }} style={{ width: 22, height: 22, borderRadius: "50%", background: "#22c55e", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                     <Check style={{ width: 11, height: 11, color: "#fff", strokeWidth: 3 }} />
@@ -1068,10 +1103,10 @@ function SharePanel({
                     <Check style={{ width: 10, height: 10, color: "#a5b4fc", strokeWidth: 3 }} />
                   </motion.div>
                 ) : null}
-              
-            </motion.button>
-          );
-        })}
+              </motion.button>
+            );
+          })
+        )}
       </div>
 
       {/* Erreur */}
