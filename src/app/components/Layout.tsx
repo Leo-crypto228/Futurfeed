@@ -112,7 +112,11 @@ export function Layout() {
       <main
         id="app-scroll"
         className={`flex-1 overflow-y-auto overflow-x-hidden${hideNav ? "" : " fw-main"}`}
-        style={{ paddingBottom: hideNav ? 0 : 60, WebkitOverflowScrolling: "touch" } as React.CSSProperties}
+        style={{
+          paddingTop: "env(safe-area-inset-top, 0px)",
+          paddingBottom: hideNav ? 0 : 60,
+          WebkitOverflowScrolling: "touch",
+        } as React.CSSProperties}
       >
         <Suspense fallback={
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "60vh" }}>

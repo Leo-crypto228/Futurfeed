@@ -309,7 +309,11 @@ export function Feed() {
   useEffect(() => {
     if (!headerRef.current) return;
     const ro = new ResizeObserver((entries) => {
-      for (const e of entries) setHeaderH(e.contentRect.height + 2);
+      for (const e of entries) {
+        // borderBoxSize includes padding (safe-area-inset-top) — gives true rendered height
+        const h = e.borderBoxSize?.[0]?.blockSize ?? e.contentRect.height;
+        setHeaderH(Math.round(h) + 1);
+      }
     });
     ro.observe(headerRef.current);
     return () => ro.disconnect();
@@ -657,12 +661,12 @@ export function Feed() {
       {/* ── Fixed scroll-aware header ── */}
       <motion.div
         ref={headerRef}
-        className="fixed left-0 right-0 z-10 bg-background/95 backdrop-blur-xl border-b border-border/50"
-        style={{ top: "env(safe-area-inset-top)" }}
+        className="fixed left-0 right-0 z-10 bg-background border-b border-white/5"
+        style={{ top: 0 }}
         animate={{ y: headerVisible ? 0 : -(Math.max(0, (headerH || 165) - tabsH)) }}
         transition={{ type: "spring", stiffness: 420, damping: 38, mass: 0.8 }}
       >
-        <div className="max-w-2xl mx-auto px-3 pt-4 pb-0">
+        <div className="max-w-2xl mx-auto px-3 pb-0" style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 14px)" }}>
 
           {/* Row 1: logo centré */}
           <div className="flex items-center justify-center mb-3">
